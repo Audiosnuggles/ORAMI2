@@ -1,91 +1,29 @@
-/* --- GRUNDLAYOUT --- */
-body {
-  margin: 0;
-  padding: 20px;
-  background-color: #eaeaea;
-  font-family: Arial, sans-serif;
-  /* WICHTIG: Verhindert Scrollen beim Zeichnen auf Touchscreens */
-  touch-action: none; 
-  overscroll-behavior: none;
-}
-
+/* Container verbreitert auf 960px (war 800), damit Canvas (700px) + Controls Platz haben */
 #main {
-  width: 860px; /* Etwas breiter als original (800px), damit die Slider Platz haben */
+  width: 960px;
   margin: 0 auto;
   position: relative;
   text-align: left;
   background-color: #f5f5f5;
   padding: 20px;
   box-sizing: border-box;
-  border: 1px solid #ccc;
-  box-shadow: 0 0 10px rgba(0,0,0,0.1);
   min-height: 600px;
+  border: 1px solid #ccc;
 }
 
-/* --- ÜBERSCHRIFT & LOGO --- */
+body {
+  margin: 0;
+  padding: 0;
+  background-color: #eaeaea;
+  touch-action: none; /* Verhindert Scrollen beim Zeichnen auf Touchscreens */
+}
+
+/* Headline */
 h1 {
   margin: 0 0 20px 0;
   font-family: "Courier New", Courier, monospace;
-  font-size: 24px;
-  display: flex;
-  align-items: center;
 }
 
-#pigeon-logo {
-  margin-left: 15px;
-  opacity: 0.9;
-}
-
-/* Falls du die Taube wie früher unten rechts haben willst (benötigt img am Ende des HTMLs): */
-#pigeon {
-  position: absolute;
-  bottom: 20px;
-  right: 20px;
-  width: 80px;
-  z-index: 99;
-  opacity: 0.5;
-}
-
-/* --- STEUERELEMENTE (OBEN) --- */
-.control-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 15px;
-  margin-bottom: 15px;
-  padding-bottom: 15px;
-  border-bottom: 1px solid #e0e0e0;
-}
-
-#controls-top {
-  border-bottom: 2px solid #ccc; /* Dickere Linie wie im Classic Look */
-}
-
-label, button, select, input {
-  font-size: 13px;
-  font-family: Arial, sans-serif;
-  cursor: pointer;
-}
-
-button {
-  padding: 5px 12px;
-  background: #e0e0e0;
-  border: 1px solid #999;
-  border-radius: 3px;
-}
-button:hover { background: #d0d0d0; }
-button:active { background: #ccc; box-shadow: inset 0 1px 3px rgba(0,0,0,0.2); }
-
-/* Eingabefelder etwas hübscher machen */
-input[type="number"] { width: 45px; padding: 3px; }
-select { padding: 3px; }
-
-/* Spezielles Styling für Chord-Select (aus Original übernommen) */
-#chordSelect {
-  margin-left: 5px;
-}
-
-/* --- TRACK AREA --- */
 #tracks {
   display: flex;
   flex-direction: column;
@@ -94,104 +32,109 @@ select { padding: 3px; }
 
 .track-container {
   display: flex;
-  align-items: flex-start; /* Oben bündig */
-  gap: 8px;
+  align-items: center;
+  gap: 5px;
   background: #fff;
-  padding: 6px;
+  padding: 5px;
   border: 1px solid #ddd;
 }
 
-/* Linke Seite: Wave Buttons */
 .wave-buttons {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 5px;
 }
 
 .wave-btn {
-  width: 28px;
-  height: 28px;
-  font-size: 14px;
-  padding: 0;
-  line-height: 28px;
-  text-align: center;
-  font-weight: bold;
-}
-
-.wave-btn.active {
-  background-color: #555;
-  color: #fff;
-  border-color: #000;
-}
-
-/* Mitte: Canvas */
-.canvas-holder {
-  position: relative;
-  flex-grow: 1; /* Nimmt den restlichen Platz ein */
-}
-
-canvas {
-  border: 1px solid #999;
-  background-color: #fff;
-  cursor: crosshair;
-  display: block; /* Verhindert Lücken unten */
-  width: 100%;    /* Responsive im Container */
-}
-
-.legend {
-  position: absolute;
-  left: 3px;
-  top: 3px;
   width: 30px;
-  font-size: 9px;
-  color: #888;
-  line-height: 1.4em;
-  pointer-events: none;
-}
-
-/* Rechte Seite: Controls (Mute, Vol, Snap) */
-.side-controls {
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  width: 85px;
-  height: 120px; /* Gleiche Höhe wie Canvas */
-}
-
-.mute-btn {
-  width: 100%;
-  padding: 4px;
-  font-weight: bold;
-}
-
-/* Neuer Volume Slider Container */
-.vol-wrapper {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  background: #f0f0f0;
-  padding: 5px 2px;
-  border: 1px solid #ccc;
-  border-radius: 3px;
-}
-
-.vol-wrapper span {
-  font-size: 9px;
-  color: #666;
-  text-transform: uppercase;
-  margin-bottom: 2px;
-}
-
-.volume-slider {
-  width: 90%;
-  height: 5px; /* Dünnerer Slider für feineren Look */
+  height: 30px;
+  font-size: 16px;
   cursor: pointer;
 }
 
+.wave-btn.active {
+  background-color: #ddd;
+  border: 2px solid #333;
+}
+
+/* Rechte Seite Controls (Mute, Vol, Snap) */
+.track-controls {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    width: 80px;
+}
+
+.mute-btn {
+  height: 25px;
+  cursor: pointer;
+  font-size: 12px;
+  width: 100%;
+}
+
+.vol-box {
+    width: 100%;
+    padding: 2px;
+}
+
+.volume-slider {
+    width: 100%;
+    cursor: pointer;
+}
+
 .snap-label {
-  font-size: 11px;
+  font-size: 12px;
+  margin-left: 0; /* margin reset */
+}
+
+/* Legende */
+.legend {
+  width: 40px;
+  font-size: 10px;
+  text-align: right;
+  line-height: 1.2em;
+  padding-right: 2px;
+}
+
+canvas {
+  border: 1px solid #ccc;
+  background-color: #fff;
+  cursor: crosshair;
+}
+
+#controls {
+  margin-top: 20px;
+}
+
+/* Alle Steuerelemente in einer Zeile */
+.control-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 4px;
-  margin-top: auto; /* Schiebt Snap nach unten */
+  gap: 15px;
+  margin-bottom: 10px;
+}
+
+label, button {
+  font-family: Arial, sans-serif;
+  font-size: 14px;
+}
+
+/* Akkordtyp-Dropdown */
+#chordSelect {
+  vertical-align: middle;
+  margin-left: 10px;
+  padding: 5px;
+  font-size: 14px;
+}
+
+/* Taube */
+#pigeon {
+  position: absolute;
+  bottom: 20px;
+  right: 20px;
+  width: 80px;
+  height: auto;
+  z-index: 999;
 }
