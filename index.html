@@ -8,6 +8,7 @@
 <body>
   <div id="main">
     <h1>The Pigeon</h1>
+    
     <div id="tracks">
       <div class="track-container">
         <div class="wave-buttons">
@@ -15,16 +16,15 @@
           <button class="wave-btn" data-wave="square">□</button>
           <button class="wave-btn" data-wave="sawtooth">Z</button>
         </div>
-        <div class="legend" id="legend1"></div>
+        <div class="legend"></div>
         <canvas id="canvas1" width="700" height="100"></canvas>
-        
-        <div class="track-controls">
-            <button class="mute-btn" data-track="0">Mute</button>
+        <div class="controls-right">
+            <button class="mute-btn">Mute</button>
             <div class="vol-box">
-                <input type="range" class="volume-slider" data-track="0" min="0" max="1" step="0.01" value="0.8" title="Lautstärke">
+                <input type="range" class="volume-slider" min="0" max="1" step="0.01" value="0.8">
             </div>
             <label class="snap-label">
-              <input type="checkbox" class="snap-checkbox" data-track="0"> Snap
+              <input type="checkbox" class="snap-checkbox"> Snap
             </label>
         </div>
       </div>
@@ -35,15 +35,15 @@
           <button class="wave-btn" data-wave="square">□</button>
           <button class="wave-btn" data-wave="sawtooth">Z</button>
         </div>
-        <div class="legend" id="legend2"></div>
+        <div class="legend"></div>
         <canvas id="canvas2" width="700" height="100"></canvas>
-        <div class="track-controls">
-            <button class="mute-btn" data-track="1">Mute</button>
+        <div class="controls-right">
+            <button class="mute-btn">Mute</button>
             <div class="vol-box">
-                <input type="range" class="volume-slider" data-track="1" min="0" max="1" step="0.01" value="0.8">
+                <input type="range" class="volume-slider" min="0" max="1" step="0.01" value="0.8">
             </div>
             <label class="snap-label">
-              <input type="checkbox" class="snap-checkbox" data-track="1"> Snap
+              <input type="checkbox" class="snap-checkbox"> Snap
             </label>
         </div>
       </div>
@@ -54,15 +54,15 @@
           <button class="wave-btn" data-wave="square">□</button>
           <button class="wave-btn" data-wave="sawtooth">Z</button>
         </div>
-        <div class="legend" id="legend3"></div>
+        <div class="legend"></div>
         <canvas id="canvas3" width="700" height="100"></canvas>
-        <div class="track-controls">
-            <button class="mute-btn" data-track="2">Mute</button>
+        <div class="controls-right">
+            <button class="mute-btn">Mute</button>
             <div class="vol-box">
-                <input type="range" class="volume-slider" data-track="2" min="0" max="1" step="0.01" value="0.8">
+                <input type="range" class="volume-slider" min="0" max="1" step="0.01" value="0.8">
             </div>
             <label class="snap-label">
-              <input type="checkbox" class="snap-checkbox" data-track="2"> Snap
+              <input type="checkbox" class="snap-checkbox"> Snap
             </label>
         </div>
       </div>
@@ -73,15 +73,15 @@
           <button class="wave-btn" data-wave="square">□</button>
           <button class="wave-btn" data-wave="sawtooth">Z</button>
         </div>
-        <div class="legend" id="legend4"></div>
+        <div class="legend"></div>
         <canvas id="canvas4" width="700" height="100"></canvas>
-        <div class="track-controls">
-            <button class="mute-btn" data-track="3">Mute</button>
+        <div class="controls-right">
+            <button class="mute-btn">Mute</button>
             <div class="vol-box">
-                <input type="range" class="volume-slider" data-track="3" min="0" max="1" step="0.01" value="0.8">
+                <input type="range" class="volume-slider" min="0" max="1" step="0.01" value="0.8">
             </div>
             <label class="snap-label">
-              <input type="checkbox" class="snap-checkbox" data-track="3"> Snap
+              <input type="checkbox" class="snap-checkbox"> Snap
             </label>
         </div>
       </div>
@@ -89,20 +89,11 @@
 
     <div id="controls">
       <div class="control-row">
-        <label>
-          Tempo (BPM):
-          <input type="number" id="bpmInput" value="120" min="30" max="300" step="1">
-        </label>
-        <label>
-          Loop:
-          <input type="checkbox" id="loopCheckbox" checked>
-        </label>
-        <label>
-          Harmonize:
-          <input type="checkbox" id="harmonizeCheckbox">
-        </label>
+        <label>Tempo (BPM): <input type="number" id="bpmInput" value="120" min="30" max="300"></label>
+        <label>Loop: <input type="checkbox" id="loopCheckbox" checked></label>
+        <label>Harmonize: <input type="checkbox" id="harmonizeCheckbox"></label>
         <label id="scaleSelectContainer" style="display:none;">
-          Tonleiter:
+          Scale:
           <select id="scaleSelect">
             <option value="major">Major</option>
             <option value="minor">Minor</option>
@@ -110,55 +101,49 @@
           </select>
         </label>
       </div>
+      
       <div class="control-row">
-        <label>
-          Werkzeug:
+        <label>Tool: 
           <select id="toolSelect">
-            <option value="draw" selected>Zeichnen</option>
-            <option value="erase">Radiergummi</option>
+            <option value="draw">Zeichnen</option>
+            <option value="erase">Radierer</option>
           </select>
         </label>
-        <label>
-          Pinselstil:
+        <label>Pinsel:
           <select id="brushSelect">
-            <option value="variable" selected>Variable Breite</option>
-            <option value="calligraphy">Calligraphy</option>
-            <option value="bristle">Bristle</option>
+            <option value="variable">Variabel</option>
+            <option value="calligraphy">Kalligrafie</option>
+            <option value="bristle">Borsten</option>
+            <option value="fractal">Fraktal</option>
+            <option value="chord">Akkord</option>
             <option value="standard">Standard</option>
-            <option value="fractal">Fractal</option>
-            <option value="chord">Chord</option>
           </select>
         </label>
-        <label>
-          Akkordtyp:
+        <label>Chord:
           <select id="chordSelect">
-            <option value="major" selected>Dur (Major)</option>
-            <option value="minor">Moll (Minor)</option>
-            <option value="diminished">Vermindert (Dim)</option>
-            <option value="augmented">Übermäßig (Aug)</option>
+            <option value="major">Dur</option>
+            <option value="minor">Moll</option>
+            <option value="diminished">Vermindert</option>
+            <option value="augmented">Übermäßig</option>
             <option value="sus2">Sus2</option>
             <option value="sus4">Sus4</option>
           </select>
         </label>
-        <label>
-          Pinselgröße:
-          <input type="range" id="brushSizeSlider" min="1" max="40" value="5">
-        </label>
+        <label>Größe: <input type="range" id="brushSizeSlider" min="1" max="40" value="5"></label>
       </div>
+
       <div class="control-row">
         <button id="playButton">Play</button>
         <button id="stopButton">Stop</button>
         <button id="clearButton">Clear</button>
         <button id="undoButton">Undo</button>
-        <button id="redoButton">Redo</button>
         <button id="exportButton">Export</button>
         <button id="importButton">Import</button>
         <input type="file" id="importFileInput" style="display:none;">
       </div>
     </div>
   </div>
-
-  <img id="pigeon" src="pigeon.svg" alt="pigeon">
-  <script src="script.js"></script>
+  
+  <img id="pigeon" src="pigeon.svg" alt="pigeon" style="display:none;"> <script src="script.js"></script>
 </body>
 </html>
