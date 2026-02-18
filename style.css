@@ -1,0 +1,116 @@
+/* Container */
+#main {
+  width: 800px;
+  margin: 0 auto;
+  position: relative;
+  text-align: left;
+  background-color: #f5f5f5;
+  padding: 20px;
+  box-sizing: border-box;
+  min-height: 600px;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background-color: #eaeaea;
+}
+
+/* Headline */
+h1 {
+  margin: 0 0 20px 0;
+  font-family: "Courier New", Courier, monospace;
+}
+
+#tracks {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.track-container {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.wave-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.wave-btn {
+  width: 30px;
+  height: 30px;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.wave-btn.active {
+  background-color: #ddd;
+  border: 2px solid #333;
+}
+
+.mute-btn {
+  height: 30px;
+  cursor: pointer;
+  font-size: 14px;
+  margin-left: 5px;
+}
+
+.snap-label {
+  font-size: 12px;
+  margin-left: 5px;
+}
+
+/* Legende */
+.legend {
+  width: 40px;
+  font-size: 10px;
+  text-align: right;
+  line-height: 1.2em;
+  padding-right: 2px;
+}
+
+canvas {
+  border: 1px solid #ccc;
+  background-color: #fff;
+  cursor: crosshair;
+}
+
+#controls {
+  margin-top: 20px;
+}
+
+/* Alle Steuerelemente in einer Zeile */
+.control-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 15px;
+  margin-bottom: 10px;
+}
+
+label, button {
+  font-family: Arial, sans-serif;
+  font-size: 14px;
+}
+
+/* Akkordtyp-Dropdown gleich hoch wie die anderen */
+#chordSelect {
+  vertical-align: middle;
+  margin-left: 10px;
+  padding: 5px;
+  font-size: 14px;
+}
+
+/* Taube */
+#pigeon {
+  position: absolute;
+  bottom: 20px;
+  right: 20px;
+  width: 80px;
+  height: auto;
+  z-index: 999;
+}
