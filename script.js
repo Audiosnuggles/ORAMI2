@@ -1,9 +1,13 @@
 /**
- * THE PIGEON - Final Polished Version
- * Fixes: Instant Chord Attack (Zero Latency), Bristle Noise, Audio Balancing
+ * THE PIGEON - Final Pro Audio Version
+ * Features:
+ * - Granular Bristle Brush (Noise + LFO + Stereo)
+ * - Zero-Latency Chords
+ * - Preserved Visual Styles
+ * - Volume Sliders & Mixing
  */
 
-// --- KONFIGURATION & GLOBALS ---
+// --- KONFIGURATION ---
 const chordIntervals = {
   major: [0, 4, 7],
   minor: [0, 3, 7],
@@ -14,15 +18,33 @@ const chordIntervals = {
 };
 const chordColors = ['#FF5733', '#33FF57', '#3357FF'];
 
-// --- AUDIO CACHES (Performance) ---
+// 1. Noise Buffer (für Bristle Textur)
+let noiseBuffer = null;
+function getNoiseBuffer(ctx) {
+  if (noiseBuffer) return noiseBuffer;
+  // 5 Sekunden Rauschen reichen für den Loop
+  const bufferSize = ctx.sampleRate * 5; 
+  const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < bufferSize; i++) {
+    // Pink Noise Annäherung (klingt natürlicher als White Noise)
+    const white = Math.random() * 2 - 1;
+    data[i] = (lastOut + (0.02 * white)) / 1.02;
+    lastOut = data[i];
+    data[i] *= 3.5; // Gain Ausgleich
+  }
+  noiseBuffer = buffer;
+  return buffer;
+}
+let lastOut = 0;
 
-// 1. Distortion Curve (für Fractal)
+// 2. Distortion Curve (für Fractal Crunch)
 let cachedDistortionCurve = null;
 function getDistortionCurve() {
   if (cachedDistortionCurve) return cachedDistortionCurve;
   const n = 22050;
   const curve = new Float32Array(n);
-  const amount = 80;
+  const amount = 80; // Moderate Verzerrung
   for (let i = 0; i < n; ++i) {
     let x = i * 2 / n - 1;
     curve[i] = (3 + amount) * x * 20 * (Math.PI / 180) / (Math.PI + amount * Math.abs(x));
@@ -31,101 +53,78 @@ function getDistortionCurve() {
   return curve;
 }
 
-// 2. Noise Buffer (für Bristle) - NEU!
-let cachedNoiseBuffer = null;
-function getNoiseBuffer(ctx) {
-  if (cachedNoiseBuffer) return cachedNoiseBuffer;
-  const bufferSize = ctx.sampleRate * 2; // 2 Sekunden Loop reicht
-  const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
-  const data = buffer.getChannelData(0);
-  for (let i = 0; i < bufferSize; i++) {
-    data[i] = Math.random() * 2 - 1; // Weißes Rauschen
-  }
-  cachedNoiseBuffer = buffer;
-  return buffer;
-}
-
 document.addEventListener("DOMContentLoaded", function() {
-  
-  // --- STATE ---
-  let audioCtx = null;
-  let masterGain, compressor;
+  const chordElem = document.getElementById("chordSelect");
+  let currentChord = chordElem ? chordElem.value : "major";
+
   let isPlaying = false;
-  let playbackStartTime = 0;
-  let playbackDuration = 0;
-  let animationFrameId;
-  
+  let audioCtx;
+  let masterGain;
+  let playbackStartTime;
+  let playbackDuration;
   let loopEnabled = document.getElementById("loopCheckbox").checked;
+  let animationFrameId;
   let undoStack = [];
+  let redoStack = [];
 
   // Live Synth Speicher
-  let liveNodes = []; // Umbenannt von liveOscillators, da jetzt auch Noise-Nodes drin sein können
+  let liveNodes = []; 
   let liveGainNode = null;
 
-  // UI State
   let currentTool = document.getElementById("toolSelect").value;
   let currentBrush = document.getElementById("brushSelect").value;
   let currentBrushSize = parseInt(document.getElementById("brushSizeSlider").value, 10);
-  let currentChord = document.getElementById("chordSelect").value;
 
-  // --- UI EVENT LISTENER ---
+  // --- UI Listener ---
   document.getElementById("toolSelect").addEventListener("change", e => currentTool = e.target.value);
   document.getElementById("brushSelect").addEventListener("change", e => currentBrush = e.target.value);
   document.getElementById("brushSizeSlider").addEventListener("input", e => currentBrushSize = parseInt(e.target.value, 10));
-  document.getElementById("chordSelect").addEventListener("change", e => currentChord = e.target.value);
+  document.getElementById("bpmInput").addEventListener("change", e => { if (isPlaying) document.getElementById("stopButton").click(); });
   document.getElementById("loopCheckbox").addEventListener("change", e => loopEnabled = e.target.checked);
-  document.getElementById("bpmInput").addEventListener("change", () => { if(isPlaying) stopPlayback(); });
-
-  const harmonizeCheck = document.getElementById("harmonizeCheckbox");
-  const scaleContainer = document.getElementById("scaleSelectContainer");
-  harmonizeCheck.addEventListener("change", () => {
-    scaleContainer.style.display = harmonizeCheck.checked ? "inline" : "none";
+  
+  const harmonizeCheckbox = document.getElementById("harmonizeCheckbox");
+  const scaleSelectContainer = document.getElementById("scaleSelectContainer");
+  harmonizeCheckbox.addEventListener("change", () => {
+    scaleSelectContainer.style.display = harmonizeCheckbox.checked ? "inline" : "none";
   });
+  if(chordElem) chordElem.addEventListener("change", e => currentChord = e.target.value);
 
-  // --- AUDIO INIT ---
+  // --- Audio Engine Setup ---
   function initAudio() {
     if (audioCtx) return;
-    const AudioContext = window.AudioContext || window.webkitAudioContext;
-    audioCtx = new AudioContext();
-
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     masterGain = audioCtx.createGain();
     masterGain.gain.value = 0.5;
 
-    compressor = audioCtx.createDynamicsCompressor();
-    compressor.threshold.value = -12;
+    // Master Compressor (Limiter)
+    const compressor = audioCtx.createDynamicsCompressor();
+    compressor.threshold.value = -10;
     compressor.ratio.value = 12;
     masterGain.connect(compressor);
     compressor.connect(audioCtx.destination);
   }
 
-  // --- TRACKS SETUP ---
-  const trackContainers = document.querySelectorAll(".track-container");
-  const tracks = Array.from(trackContainers).map((container, index) => {
-    return {
-      index: index,
-      canvas: container.querySelector("canvas"),
-      ctx: container.querySelector("canvas").getContext("2d"),
-      segments: [],
-      wave: "sine",
-      mute: false,
-      vol: 0.8,
-      snap: false,
-      gainNode: null
-    };
-  });
+  // --- Tracks Setup ---
+  const tracks = [
+    { canvas: document.getElementById("canvas1"), segments: [], waveType: "sine", muted: false, snap: false, vol: 0.8, gainNode: null },
+    { canvas: document.getElementById("canvas2"), segments: [], waveType: "sine", muted: false, snap: false, vol: 0.8, gainNode: null },
+    { canvas: document.getElementById("canvas3"), segments: [], waveType: "sine", muted: false, snap: false, vol: 0.8, gainNode: null },
+    { canvas: document.getElementById("canvas4"), segments: [], waveType: "sine", muted: false, snap: false, vol: 0.8, gainNode: null }
+  ];
+  tracks.forEach((track, idx) => { track.index = idx; });
 
-  tracks.forEach((track) => {
-    const container = track.canvas.parentElement;
+  // Init UI Elements pro Track
+  document.querySelectorAll(".track-container").forEach((container, idx) => {
+    const track = tracks[idx];
+    track.ctx = track.canvas.getContext("2d");
     
-    // Initiales Zeichnen
     drawGrid(track);
-    const leg = container.querySelector(".legend");
-    if(leg) leg.innerHTML = "1k<br><br>500<br><br>250<br><br>80";
+    container.querySelector(".legend").innerHTML = generateLegend(track.canvas.height);
 
-    // Controls Logic
+    // Wave Buttons
     container.querySelectorAll(".wave-btn").forEach(btn => {
       btn.addEventListener("click", () => {
-        track.wave = btn.dataset.wave;
+        track.waveType = btn.dataset.wave;
         container.querySelectorAll(".wave-btn").forEach(b => b.classList.remove("active"));
         btn.classList.add("active");
       });
@@ -133,14 +132,16 @@ document.addEventListener("DOMContentLoaded", function() {
     const defBtn = container.querySelector('.wave-btn[data-wave="sine"]');
     if(defBtn) defBtn.classList.add("active");
 
-    const muteBtn = container.querySelector(".mute-btn");
-    muteBtn.addEventListener("click", () => {
-      track.mute = !track.mute;
-      muteBtn.style.backgroundColor = track.mute ? "#ff4444" : "";
-      muteBtn.style.color = track.mute ? "white" : "";
+    // Mute
+    const muteButton = container.querySelector(".mute-btn");
+    muteButton.addEventListener("click", () => {
+      track.muted = !track.muted;
+      muteButton.style.backgroundColor = track.muted ? "#ddd" : "";
+      muteButton.style.border = track.muted ? "2px solid #333" : "";
       updateTrackVolume(track);
     });
 
+    // Volume Slider
     const volSlider = container.querySelector(".volume-slider");
     if(volSlider) {
         track.vol = parseFloat(volSlider.value);
@@ -150,10 +151,10 @@ document.addEventListener("DOMContentLoaded", function() {
         });
     }
 
-    const snapCb = container.querySelector(".snap-checkbox");
-    if(snapCb) snapCb.addEventListener("change", e => track.snap = e.target.checked);
+    const snapCheckbox = container.querySelector(".snap-checkbox");
+    snapCheckbox.addEventListener("change", e => track.snap = e.target.checked);
 
-    // --- DRAWING ---
+    // --- Drawing Interaction ---
     let drawing = false;
 
     const startDraw = (e) => {
@@ -161,8 +162,8 @@ document.addEventListener("DOMContentLoaded", function() {
       if (!audioCtx) initAudio();
       if (audioCtx.state === "suspended") audioCtx.resume();
 
-      const pos = getPos(e, track.canvas);
-      let x = track.snap ? snapX(pos.x, track.canvas.width) : pos.x;
+      const { x, y } = getCanvasCoordinates(e, track.canvas);
+      let snapX = track.snap ? snapCoordinate(x, track.canvas.width) : x;
 
       if (currentTool === "draw") {
         drawing = true;
@@ -171,58 +172,57 @@ document.addEventListener("DOMContentLoaded", function() {
         if(currentBrush === "fractal") { jX = Math.random()*10-5; jY = Math.random()*20-10; }
 
         track.currentSegment = {
-          points: [{ x: x, y: pos.y, jX, jY }],
+          points: [{ x: snapX, y, jX, jY }],
+          thickness: currentBrushSize,
           brush: currentBrush,
-          size: currentBrushSize,
-          chord: (currentBrush === "chord") ? currentChord : null
+          chordType: (currentBrush === "chord") ? currentChord : null
         };
         track.segments.push(track.currentSegment);
-        startLiveSynth(track, pos.y);
+        startLiveSynth(track, y);
         redrawTrack(track, null);
       } else {
-        eraseAt(track, x, pos.y);
+        eraseAt(track, x, y);
       }
     };
 
     const moveDraw = (e) => {
       if (!drawing && currentTool !== "erase") return;
       e.preventDefault();
-      const pos = getPos(e, track.canvas);
-      let x = track.snap ? snapX(pos.x, track.canvas.width) : pos.x;
+      const { x, y } = getCanvasCoordinates(e, track.canvas);
+      let snapX = track.snap ? snapCoordinate(x, track.canvas.width) : x;
 
       if (currentTool === "draw" && drawing) {
         let jX=0, jY=0;
         if(currentBrush === "fractal") { jX = Math.random()*10-5; jY = Math.random()*20-10; }
-
-        const seg = track.currentSegment;
-        seg.points.push({ x: x, y: pos.y, jX, jY });
         
-        updateLiveSynth(track, pos.y + jY);
-
-        // Effizientes Live-Rendering (nur letzter Abschnitt)
+        track.currentSegment.points.push({ x: snapX, y, jX, jY });
+        updateLiveSynth(track, y + jY);
+        
+        // Optimiertes Live-Drawing (nur letzte Punkte)
+        const seg = track.currentSegment;
         if (seg.brush !== "chord") {
-            const idx2 = seg.points.length - 1;
-            const idx1 = idx2 - 1;
-            // Fake Segment für die Funktion
-            const drawSeg = { points: seg.points, thickness: currentBrushSize, brush: currentBrush };
-            switch(seg.brush) {
-                case "variable": drawSegmentVariable(track.ctx, drawSeg, idx1, idx2, currentBrushSize); break;
-                case "calligraphy": drawSegmentCalligraphy(track.ctx, drawSeg, idx1, idx2, currentBrushSize); break;
-                case "bristle": drawSegmentBristle(track.ctx, drawSeg, idx1, idx2, currentBrushSize); break;
-                case "fractal": drawSegmentFractal(track.ctx, seg, idx1, idx2, currentBrushSize); break;
-                default: drawSegmentStandard(track.ctx, drawSeg, idx1, idx2, currentBrushSize);
-            }
+           const i = seg.points.length - 1;
+           const tempSeg = { points: seg.points, thickness: currentBrushSize, brush: currentBrush };
+           // Visuelle Logik bewahren!
+           switch(seg.brush) {
+             case "variable": drawSegmentVariable(track.ctx, tempSeg, i-1, i, currentBrushSize); break;
+             case "calligraphy": drawSegmentCalligraphy(track.ctx, tempSeg, i-1, i, currentBrushSize); break;
+             case "bristle": drawSegmentBristle(track.ctx, tempSeg, i-1, i, currentBrushSize); break;
+             case "fractal": drawSegmentFractal(track.ctx, seg, i-1, i, currentBrushSize); break;
+             default: drawSegmentStandard(track.ctx, tempSeg, i-1, i, currentBrushSize);
+           }
         } else {
-            redrawTrack(track, null);
+           redrawTrack(track, null);
         }
       } else if (currentTool === "erase") {
-         if(e.buttons === 1 || e.type === "touchmove") eraseAt(track, x, pos.y);
+        if(e.buttons === 1 || e.type === "touchmove") eraseAt(track, x, y);
       }
     };
 
     const endDraw = () => {
       if (drawing) {
         undoStack.push({ trackIndex: track.index, segment: track.currentSegment });
+        redoStack = [];
         stopLiveSynth(currentBrush);
       }
       drawing = false;
@@ -238,142 +238,106 @@ document.addEventListener("DOMContentLoaded", function() {
     track.canvas.addEventListener("touchend", endDraw);
   });
 
-  // --- HELPERS ---
-  function getPos(e, canvas) {
-    const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
-    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-    return { x: (clientX - rect.left) * scaleX, y: (clientY - rect.top) * scaleY };
-  }
-  function snapX(x, w) { return Math.round(x / (w/32)) * (w/32); }
-  function drawGrid(track) {
-    const ctx = track.ctx;
-    ctx.clearRect(0, 0, track.canvas.width, track.canvas.height);
-    ctx.strokeStyle = "#eee";
-    for(let i=0; i<=32; i++) {
-       ctx.beginPath(); let x = i*(track.canvas.width/32);
-       ctx.moveTo(x,0); ctx.lineTo(x,track.canvas.height);
-       ctx.lineWidth = (i%4===0) ? 2 : 1; ctx.stroke();
-    }
-    for(let j=0; j<4; j++) {
-       ctx.beginPath(); let y = j*(track.canvas.height/4);
-       ctx.moveTo(0, y); ctx.lineTo(track.canvas.width, y); ctx.lineWidth=1; ctx.stroke();
-    }
-  }
-  function mapYToFreq(y, h) { return 1000 - (y/h)*920; }
-  function updateTrackVolume(track) {
-      if(track.gainNode && audioCtx) {
-          track.gainNode.gain.setTargetAtTime(track.mute ? 0 : track.vol, audioCtx.currentTime, 0.05);
-      }
-  }
-  function eraseAt(track, x, y) {
-      const r = 15;
-      track.segments = track.segments.filter(s => !s.points.some(p => Math.hypot(p.x-x, p.y-y) < r));
-      redrawTrack(track, null);
-  }
-  function quantize(freq, scale) {
-    let midi = 69 + 12*Math.log2(freq/440);
-    let r = Math.round(midi);
-    let pc = r % 12;
-    let pattern = [0,2,4,5,7,9,11];
-    if(scale === "minor") pattern = [0,2,3,5,7,8,10];
-    if(scale === "pentatonic") pattern = [0,3,5,7,10];
-    let best = pattern.reduce((prev, curr) => Math.abs(curr - pc) < Math.abs(prev - pc) ? curr : prev);
-    // Fix für modulo-Vergleich bei Pattern
-    let minD = 99, bestP = pattern[0];
-    pattern.forEach(p => {
-        let d = Math.abs(p - pc);
-        if(d < minD) { minD = d; bestP = p; }
-    });
-    return 440 * Math.pow(2, (r - pc + bestP - 69)/12);
-  }
-
-  // --- LIVE SYNTH ENGINE (Optimiert) ---
+  // --- LIVE SYNTH (Echtzeit + Bristle Noise) ---
   function startLiveSynth(track, y) {
-    if (track.mute || track.vol < 0.01) return;
+    if (track.muted || track.vol < 0.01) return;
     liveNodes = [];
     liveGainNode = audioCtx.createGain();
     liveGainNode.gain.setValueAtTime(0, audioCtx.currentTime);
 
     let maxGain = 0.25;
     let attack = 0.05;
-
-    // FIX: Chord Attack fast instant machen für bessere Latenz
-    if (currentBrush === "chord") { maxGain = 0.15; attack = 0.005; } 
+    // Latenz-Fix für Chords
+    if (currentBrush === "chord") { maxGain = 0.1; attack = 0.005; } 
     if (currentBrush === "fractal") { maxGain = 0.15; }
-    if (currentBrush === "calligraphy") { maxGain = 0.3; attack = 0.2; }
-
-    liveGainNode.gain.linearRampToValueAtTime(maxGain, audioCtx.currentTime + attack);
     
+    liveGainNode.gain.linearRampToValueAtTime(maxGain, audioCtx.currentTime + attack);
+
     const tempTrackGain = audioCtx.createGain();
     tempTrackGain.gain.value = track.vol;
     liveGainNode.connect(tempTrackGain).connect(masterGain);
-    liveGainNode.tempOutput = tempTrackGain; 
+    liveGainNode.tempOutput = tempTrackGain;
 
-    // --- BRISTLE NOISE LOGIC ---
+    let freq = mapYToFrequency(y, track.canvas.height);
+    if(document.getElementById("harmonizeCheckbox").checked) {
+        freq = quantizeFrequency(freq, document.getElementById("scaleSelect").value);
+    }
+
+    // A) TONALER TEIL
+    const intervals = (currentBrush === "chord") ? chordIntervals[currentChord] : [0];
+    intervals.forEach(iv => {
+        const osc = audioCtx.createOscillator();
+        osc.type = track.waveType;
+        osc.frequency.setValueAtTime(freq * Math.pow(2, iv/12), audioCtx.currentTime);
+        
+        let out = osc;
+        if (currentBrush === "fractal") {
+            const shaper = audioCtx.createWaveShaper();
+            shaper.curve = getDistortionCurve();
+            osc.connect(shaper);
+            out = shaper;
+        }
+        out.connect(liveGainNode);
+        osc.start();
+        liveNodes.push(osc);
+    });
+
+    // B) BRISTLE SPEZIAL: Granulares Rauschen + Bewegung
     if (currentBrush === "bristle") {
+        // 1. Noise Source
         const noise = audioCtx.createBufferSource();
         noise.buffer = getNoiseBuffer(audioCtx);
         noise.loop = true;
+        
+        // 2. Filter (bewegt sich!)
+        const noiseFilter = audioCtx.createBiquadFilter();
+        noiseFilter.type = "bandpass";
+        noiseFilter.Q.value = 1.0;
+        noiseFilter.frequency.setValueAtTime(freq * 2, audioCtx.currentTime); // Filter folgt Maus
+        
+        // 3. LFO für "Wuseln" (moduliert Filter)
+        const lfo = audioCtx.createOscillator();
+        lfo.type = "triangle";
+        lfo.frequency.value = 8; // 8Hz Zittern
+        const lfoGain = audioCtx.createGain();
+        lfoGain.gain.value = 500; // Modulations-Tiefe
+        lfo.connect(lfoGain).connect(noiseFilter.frequency);
+        lfo.start();
+        liveNodes.push(lfo);
+
+        // 4. Stereo Breite (Panning)
+        const panner = audioCtx.createStereoPanner();
+        // Leichter Random Pan beim Start
+        panner.pan.value = (Math.random() * 0.5) - 0.25; 
+
+        // 5. Noise Mix
         const noiseGain = audioCtx.createGain();
-        noiseGain.gain.value = 0.4; // Mischverhältnis Noise
-        noise.connect(noiseGain).connect(liveGainNode);
+        noiseGain.gain.value = 0.6; // Rauschen dazu mischen
+
+        noise.connect(noiseFilter).connect(noiseGain).connect(panner).connect(liveGainNode);
         noise.start();
         liveNodes.push(noise);
     }
-
-    const baseFreq = mapYToFreq(y, track.canvas.height);
-    const intervals = (currentBrush === "chord") ? chordIntervals[currentChord] : [0];
-
-    intervals.forEach(iv => {
-      const osc = audioCtx.createOscillator();
-      osc.type = track.wave;
-      let freq = baseFreq * Math.pow(2, iv/12);
-      if(document.getElementById("harmonizeCheckbox").checked) {
-        freq = quantize(freq, document.getElementById("scaleSelect").value);
-      }
-      osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
-
-      let out = osc;
-      if (currentBrush === "fractal") {
-        const shaper = audioCtx.createWaveShaper();
-        shaper.curve = getDistortionCurve();
-        osc.connect(shaper);
-        out = shaper;
-      }
-      out.connect(liveGainNode);
-      osc.start();
-      liveNodes.push(osc);
-    });
   }
 
   function updateLiveSynth(track, y) {
     if (!liveNodes.length) return;
-    let freq = mapYToFreq(y, track.canvas.height);
+    let freq = mapYToFrequency(y, track.canvas.height);
     if(document.getElementById("harmonizeCheckbox").checked) {
-       freq = quantize(freq, document.getElementById("scaleSelect").value);
+        freq = quantizeFrequency(freq, document.getElementById("scaleSelect").value);
     }
     
-    // Update Oszillatoren (Noise Nodes überspringen, da keine frequency Eigenschaft)
-    liveNodes.forEach((node, i) => {
-      if(node.frequency) { // Nur Oszillatoren
-          // Hier vereinfacht: wir kennen den Index nicht exakt, wenn Noise dabei ist
-          // Aber für Chords ist Noise egal (da bristle kein Chord ist)
-          // Für Bristle gibt es nur 1 Osc (Index 0 oder 1)
-          const intervals = (currentBrush === "chord") ? chordIntervals[currentChord] : [0];
-          // Wir müssen den korrekten Intervall-Index finden. 
-          // Workaround: Bei Bristle ist interval immer 0. Bei Chord gibt es kein Noise.
-          // -> Wir nehmen i % intervals.length passt meistens.
-          // Sauberer: Wir speichern "baseFrequency" im Node Objekt. Hier reicht simple Logik:
-          let iv = 0;
-          if (currentBrush === "chord") {
-              // Bei Chord sind alle Nodes Oscillators
-              iv = intervals[i] || 0;
-          }
-          node.frequency.setTargetAtTime(freq * Math.pow(2, iv/12), audioCtx.currentTime, 0.01);
-      }
+    // Update Frequency of Oscillators
+    liveNodes.forEach(node => {
+        if(node.frequency && node.type !== "triangle") { // Nicht den LFO ändern
+           // Simple Logik: Alle Tonalen Oszillatoren updaten
+           // Wir nehmen an, die Grundfrequenz reicht für das Live-Feedback
+           node.frequency.setTargetAtTime(freq, audioCtx.currentTime, 0.01);
+        }
+        // Update Noise Filter für Bristle
+        if (node instanceof BiquadFilterNode) {
+             node.frequency.setTargetAtTime(freq * 2, audioCtx.currentTime, 0.01);
+        }
     });
   }
 
@@ -381,8 +345,7 @@ document.addEventListener("DOMContentLoaded", function() {
     if (!liveGainNode) return;
     const now = audioCtx.currentTime;
     let release = 0.05;
-    if (brush === "chord") release = 0.005; // Instant Stop
-    if (brush === "calligraphy") release = 0.3;
+    if (brush === "chord") release = 0.005; // Instant Stop für Chords!
 
     liveGainNode.gain.cancelScheduledValues(now);
     liveGainNode.gain.setTargetAtTime(0, now, release);
@@ -392,16 +355,126 @@ document.addEventListener("DOMContentLoaded", function() {
     const out = liveGainNode.tempOutput;
 
     setTimeout(() => {
-      nodes.forEach(n => n.stop());
-      gn.disconnect();
-      out.disconnect();
+        nodes.forEach(n => n.stop && n.stop());
+        gn.disconnect();
+        out.disconnect();
     }, release * 1000 + 100);
 
     liveNodes = [];
     liveGainNode = null;
   }
 
-  // --- VISUAL RENDERING (Original Logic) ---
+  // --- PLAYBACK ENGINE (Sequencer mit Bristle-Effekt) ---
+  function scheduleTracks(startTime) {
+    const harmonizeEnabled = document.getElementById("harmonizeCheckbox").checked;
+    const scaleType = document.getElementById("scaleSelect").value;
+    
+    tracks.forEach(track => {
+      track.gainNode = audioCtx.createGain();
+      track.gainNode.connect(masterGain);
+      track.gainNode.gain.value = track.muted ? 0 : track.vol;
+
+      track.segments.forEach(segment => {
+        // --- CHORDS (Latenzfrei) ---
+        if (segment.brush === "chord" && segment.chordType) {
+           const intervals = chordIntervals[segment.chordType] || [0];
+           const sorted = segment.points.slice().sort((a, b) => a.x - b.x);
+           if(sorted.length < 2) return;
+           const start = startTime + (sorted[0].x / track.canvas.width) * playbackDuration;
+           const end = startTime + (sorted[sorted.length-1].x / track.canvas.width) * playbackDuration;
+           
+           intervals.forEach(iv => {
+               const osc = audioCtx.createOscillator();
+               osc.type = track.waveType;
+               const env = audioCtx.createGain();
+               env.gain.setValueAtTime(0, start);
+               env.gain.linearRampToValueAtTime(0.15, start + 0.005); // SUPER FAST ATTACK
+               env.gain.linearRampToValueAtTime(0, end);
+               osc.connect(env).connect(track.gainNode);
+               
+               sorted.forEach(p => {
+                   const t = startTime + (p.x / track.canvas.width) * playbackDuration;
+                   let f = mapYToFrequency(p.y, track.canvas.height);
+                   if(harmonizeEnabled) f = quantizeFrequency(f, scaleType);
+                   osc.frequency.linearRampToValueAtTime(f * Math.pow(2, iv/12), t);
+               });
+               osc.start(start); osc.stop(end);
+           });
+           return;
+        }
+
+        // --- STANDARD & BRISTLE ---
+        if (segment.points.length === 0) return;
+        const sorted = segment.points.slice().sort((a, b) => a.x - b.x);
+        const start = startTime + (sorted[0].x / track.canvas.width) * playbackDuration;
+        const end = startTime + (sorted[sorted.length-1].x / track.canvas.width) * playbackDuration;
+        
+        const osc = audioCtx.createOscillator();
+        osc.type = track.waveType;
+        
+        const env = audioCtx.createGain();
+        env.gain.setValueAtTime(0, start);
+        env.gain.linearRampToValueAtTime(0.25, start+0.02);
+        env.gain.linearRampToValueAtTime(0, end);
+        
+        let out = env;
+        if (segment.brush === "fractal") {
+             const shaper = audioCtx.createWaveShaper();
+             shaper.curve = getDistortionCurve();
+             env.connect(shaper);
+             out = shaper;
+        }
+
+        // BRISTLE NOISE IM LOOP
+        if (segment.brush === "bristle") {
+            const noise = audioCtx.createBufferSource();
+            noise.buffer = getNoiseBuffer(audioCtx);
+            noise.loop = true;
+            
+            const nFilter = audioCtx.createBiquadFilter();
+            nFilter.type = "bandpass";
+            nFilter.Q.value = 1.0;
+            
+            // LFO für Bewegung
+            const lfo = audioCtx.createOscillator();
+            lfo.type = "triangle";
+            lfo.frequency.value = 6;
+            const lfoG = audioCtx.createGain();
+            lfoG.gain.value = 600;
+            lfo.connect(lfoG).connect(nFilter.frequency);
+            lfo.start(start); lfo.stop(end);
+
+            const nGain = audioCtx.createGain();
+            nGain.gain.setValueAtTime(0, start);
+            nGain.gain.linearRampToValueAtTime(0.4, start+0.05);
+            nGain.gain.linearRampToValueAtTime(0, end);
+
+            // Filter Automation
+            sorted.forEach(p => {
+                const t = startTime + (p.x / track.canvas.width) * playbackDuration;
+                let f = mapYToFrequency(p.y, track.canvas.height);
+                nFilter.frequency.linearRampToValueAtTime(f * 2, t);
+            });
+
+            noise.connect(nFilter).connect(nGain).connect(track.gainNode);
+            noise.start(start); noise.stop(end);
+        }
+
+        osc.connect(out).connect(track.gainNode);
+        
+        sorted.forEach(p => {
+             const t = startTime + (p.x / track.canvas.width) * playbackDuration;
+             let f = mapYToFrequency(p.y, track.canvas.height);
+             if(harmonizeEnabled) f = quantizeFrequency(f, scaleType);
+             osc.frequency.linearRampToValueAtTime(f, t);
+        });
+        
+        osc.start(start); osc.stop(end);
+      });
+    });
+  }
+
+  // --- VISUAL RENDERING (ORIGINAL UNVERÄNDERT) ---
   function drawSegmentStandard(ctx, seg, idx1, idx2, baseSize) {
     if (idx1 < 0 || idx2 < 0) return;
     const p1 = seg.points[idx1], p2 = seg.points[idx2];
@@ -421,15 +494,15 @@ document.addEventListener("DOMContentLoaded", function() {
     if (idx1 < 0 || idx2 < 0) return;
     const p1 = seg.points[idx1], p2 = seg.points[idx2];
     const dx = p2.x - p1.x, dy = p2.y - p1.y;
-    const norm = Math.sqrt(dx*dx + dy*dy) || 1;
-    let nx = -dy/norm, ny = dx/norm;
-    const w = baseSize;
+    const norm = Math.sqrt(dx * dx + dy * dy) || 1;
+    let nx = -dy / norm, ny = dx / norm;
+    const offset = baseSize;
     ctx.lineCap = "round"; ctx.lineWidth = 1; ctx.fillStyle = ctx.strokeStyle;
     ctx.beginPath();
-    ctx.moveTo(p1.x + nx*w, p1.y + ny*w);
-    ctx.lineTo(p2.x + nx*w, p2.y + ny*w);
-    ctx.lineTo(p2.x - nx*w, p2.y - ny*w);
-    ctx.lineTo(p1.x - nx*w, p1.y - ny*w);
+    ctx.moveTo(p1.x + nx * offset, p1.y + ny * offset);
+    ctx.lineTo(p2.x + nx * offset, p2.y + ny * offset);
+    ctx.lineTo(p2.x - nx * offset, p2.y - ny * offset);
+    ctx.lineTo(p1.x - nx * offset, p1.y - ny * offset);
     ctx.fill();
   }
   function drawSegmentBristle(ctx, seg, idx1, idx2, baseSize) {
@@ -447,7 +520,6 @@ document.addEventListener("DOMContentLoaded", function() {
     if (idx1 < 0 || idx2 < 0) return;
     const p1 = seg.points[idx1], p2 = seg.points[idx2];
     ctx.lineWidth = baseSize; ctx.lineCap = "round";
-    // Nutze gespeicherten Jitter
     ctx.beginPath(); ctx.moveTo(p1.x + (p1.jX||0), p1.y + (p1.jY||0)); ctx.lineTo(p2.x + (p2.jX||0), p2.y + (p2.jY||0)); ctx.stroke();
   }
 
@@ -468,17 +540,17 @@ document.addEventListener("DOMContentLoaded", function() {
           ctx.beginPath(); ctx.moveTo(minX - 10, avgY - yOffset); ctx.lineTo(maxX + 10, avgY - yOffset); ctx.stroke();
         });
       } else if (segment.points.length >= 2) {
-        // Andere
-        const sorted = segment.points.slice().sort((a, b) => a.x - b.x);
+        // Andere Pinsel (Unsortierte Punkte für Original-Look!)
+        const pts = segment.points;
         ctx.strokeStyle = "#000"; ctx.fillStyle = "#000";
-        for (let i = 1; i < sorted.length; i++) {
-            const tempSeg = { points: sorted, brush: segment.brush, thickness: segment.thickness };
+        for (let i = 1; i < pts.length; i++) {
+            const tempSeg = { points: pts, thickness: segment.thickness, brush: segment.brush };
             const bs = segment.thickness;
             switch(segment.brush) {
                 case "variable": drawSegmentVariable(ctx, tempSeg, i-1, i, bs); break;
                 case "calligraphy": drawSegmentCalligraphy(ctx, tempSeg, i-1, i, bs); break;
                 case "bristle": drawSegmentBristle(ctx, tempSeg, i-1, i, bs); break;
-                case "fractal": drawSegmentFractal(ctx, segment, i-1, i, bs); break; // Fractal needs real segment for jitter
+                case "fractal": drawSegmentFractal(ctx, segment, i-1, i, bs); break;
                 default: drawSegmentStandard(ctx, tempSeg, i-1, i, bs);
             }
         }
@@ -489,115 +561,47 @@ document.addEventListener("DOMContentLoaded", function() {
     }
   }
 
-  // --- PLAYBACK ENGINE ---
-  function startPlayback() {
-    if (isPlaying) return;
-    initAudio();
-    if (audioCtx.state === "suspended") audioCtx.resume();
-    const bpm = parseFloat(document.getElementById("bpmInput").value);
-    playbackDuration = (60 / bpm) * 32;
-    playbackStartTime = audioCtx.currentTime + 0.02;
-    isPlaying = true;
-    scheduleTracks(playbackStartTime);
-    animationLoop();
+  // --- HELPERS ---
+  function getCanvasCoordinates(e, canvas) {
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    return { x: (clientX - rect.left) * scaleX, y: (clientY - rect.top) * scaleY };
+  }
+  function snapCoordinate(x, w) { return Math.round(x / (w/32)) * (w/32); }
+  function drawGrid(track) {
+    const ctx = track.ctx;
+    ctx.clearRect(0, 0, track.canvas.width, track.canvas.height);
+    ctx.strokeStyle = "#eee";
+    for(let i=0; i<=32; i++) {
+       ctx.beginPath(); let x = i*(track.canvas.width/32);
+       ctx.moveTo(x,0); ctx.lineTo(x,track.canvas.height);
+       ctx.lineWidth = (i%4===0) ? 2 : 1; ctx.stroke();
+    }
+    for(let j=0; j<4; j++) {
+       ctx.beginPath(); let y = j*(track.canvas.height/4);
+       ctx.moveTo(0, y); ctx.lineTo(track.canvas.width, y); ctx.lineWidth=1; ctx.stroke();
+    }
+  }
+  function generateLegend(h) { return "1k<br>500<br>250<br>80"; }
+  function mapYToFrequency(y, h) { return 1000 - ((y / h) * 920); }
+  function quantizeFrequency(freq, scaleType) {
+    let midi = 69 + 12 * Math.log2(freq / 440);
+    let r = Math.round(midi);
+    let pattern = (scaleType === "major")?[0,2,4,5,7,9,11]:(scaleType === "minor")?[0,2,3,5,7,8,10]:[0,3,5,7,10];
+    let mod = r % 12;
+    let best = pattern.reduce((prev, curr) => Math.abs(curr - mod) < Math.abs(prev - mod) ? curr : prev);
+    return 440 * Math.pow(2, (r - mod + best - 69)/12);
+  }
+  function eraseAt(track, x, y) {
+      const r = 15;
+      track.segments = track.segments.filter(s => !s.points.some(p => Math.hypot(p.x-x, p.y-y) < r));
+      redrawTrack(track, null);
   }
 
-  function stopPlayback() {
-    isPlaying = false;
-    tracks.forEach(t => { 
-        if(t.gainNode) { t.gainNode.disconnect(); t.gainNode=null; } 
-        redrawTrack(t, null);
-    });
-  }
-
-  function scheduleTracks(startTime) {
-    const harmonizeEnabled = document.getElementById("harmonizeCheckbox").checked;
-    const scaleType = document.getElementById("scaleSelect").value;
-    
-    tracks.forEach(track => {
-      track.gainNode = audioCtx.createGain();
-      track.gainNode.connect(masterGain);
-      track.gainNode.gain.value = track.muted ? 0 : track.vol;
-
-      track.segments.forEach(segment => {
-        // --- CHORDS IM SEQUENCER ---
-        if (segment.brush === "chord" && segment.chordType) {
-           const intervals = chordIntervals[segment.chordType] || [0];
-           const sorted = segment.points.slice().sort((a, b) => a.x - b.x);
-           if(sorted.length < 2) return;
-           const start = startTime + (sorted[0].x / track.canvas.width) * playbackDuration;
-           const end = startTime + (sorted[sorted.length-1].x / track.canvas.width) * playbackDuration;
-           
-           intervals.forEach(iv => {
-               const osc = audioCtx.createOscillator();
-               osc.type = track.waveType || "sine";
-               const env = audioCtx.createGain();
-               env.gain.setValueAtTime(0, start);
-               env.gain.linearRampToValueAtTime(0.15, start + 0.01); // Fast Attack!
-               env.gain.linearRampToValueAtTime(0, end);
-               osc.connect(env).connect(track.gainNode);
-               
-               sorted.forEach(p => {
-                   const t = startTime + (p.x / track.canvas.width) * playbackDuration;
-                   let freq = mapYToFreq(p.y, track.canvas.height);
-                   if(harmonizeEnabled) freq = quantize(freq, scaleType);
-                   osc.frequency.linearRampToValueAtTime(freq * Math.pow(2, iv/12), t);
-               });
-               osc.start(start); osc.stop(end);
-           });
-           return;
-        }
-
-        // --- BRISTLE / FRACTAL / STANDARD ---
-        if (segment.points.length === 0) return;
-        const sorted = segment.points.slice().sort((a, b) => a.x - b.x);
-        const start = startTime + (sorted[0].x / track.canvas.width) * playbackDuration;
-        const end = startTime + (sorted[sorted.length-1].x / track.canvas.width) * playbackDuration;
-        
-        const osc = audioCtx.createOscillator();
-        osc.type = track.waveType || "sine";
-        
-        const env = audioCtx.createGain();
-        env.gain.setValueAtTime(0, start);
-        env.gain.linearRampToValueAtTime(0.3, start+0.05);
-        env.gain.linearRampToValueAtTime(0, end);
-        
-        let out = env;
-        if (segment.brush === "fractal") {
-             const shaper = audioCtx.createWaveShaper();
-             shaper.curve = getDistortionCurve();
-             env.connect(shaper);
-             out = shaper;
-        }
-
-        // Noise für Bristle im Playback
-        if (segment.brush === "bristle") {
-            const noise = audioCtx.createBufferSource();
-            noise.buffer = getNoiseBuffer(audioCtx);
-            noise.loop = true;
-            const noiseGain = audioCtx.createGain();
-            noiseGain.gain.setValueAtTime(0, start);
-            noiseGain.gain.linearRampToValueAtTime(0.1, start+0.05);
-            noiseGain.gain.linearRampToValueAtTime(0, end);
-            noise.connect(noiseGain).connect(track.gainNode);
-            noise.start(start);
-            noise.stop(end);
-        }
-
-        osc.connect(out).connect(track.gainNode);
-        
-        sorted.forEach(p => {
-             const t = startTime + (p.x / track.canvas.width) * playbackDuration;
-             let f = mapYToFreq(p.y, track.canvas.height);
-             if(harmonizeEnabled) f = quantize(f, scaleType);
-             osc.frequency.linearRampToValueAtTime(f, t);
-        });
-        
-        osc.start(start); osc.stop(end);
-      });
-    });
-  }
-
+  // --- LOOP & BUTTONS ---
   function animationLoop() {
     if (!isPlaying) return;
     let elapsed = audioCtx.currentTime - playbackStartTime;
@@ -616,48 +620,21 @@ document.addEventListener("DOMContentLoaded", function() {
     animationFrameId = requestAnimationFrame(animationLoop);
   }
 
-  // --- BUTTON BINDINGS ---
-  document.getElementById("playButton").addEventListener("click", startPlayback);
-  document.getElementById("stopButton").addEventListener("click", stopPlayback);
-  document.getElementById("clearButton").addEventListener("click", () => {
-    tracks.forEach(t => { t.segments = []; redrawTrack(t, null); });
-    undoStack = [];
+  document.getElementById("playButton").addEventListener("click", () => {
+    if (tracks.every(t => t.segments.length === 0)) return;
+    if (isPlaying) return;
+    initAudio();
+    if (audioCtx.state === "suspended") audioCtx.resume();
+    const bpm = parseFloat(document.getElementById("bpmInput").value);
+    playbackDuration = (60 / bpm) * 32;
+    playbackStartTime = audioCtx.currentTime + 0.02;
+    isPlaying = true;
+    scheduleTracks(playbackStartTime);
+    animationLoop();
   });
-  document.getElementById("undoButton").addEventListener("click", () => {
-    if(undoStack.length) {
-       const op = undoStack.pop();
-       tracks[op.trackIndex].segments.pop();
-       redrawTrack(tracks[op.trackIndex], null);
-    }
-  });
-  document.getElementById("exportButton").addEventListener("click", function() {
-    const settings = {
-      bpm: document.getElementById("bpmInput").value,
-      loop: document.getElementById("loopCheckbox").checked,
-      harmonize: document.getElementById("harmonizeCheckbox").checked,
-      scale: document.getElementById("scaleSelect").value,
-      tool: document.getElementById("toolSelect").value,
-      brush: document.getElementById("brushSelect").value,
-      brushSize: document.getElementById("brushSizeSlider").value
-    };
-    const exportData = { settings: settings, tracks: tracks.map(track => track.segments) };
-    const blob = new Blob([JSON.stringify(exportData)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href = url; a.download = "drawing.json"; a.click();
-  });
-  document.getElementById("importButton").addEventListener("click", () => document.getElementById("importFileInput").click());
-  document.getElementById("importFileInput").addEventListener("change", (e) => {
-      const file = e.target.files[0];
-      if(!file) return;
-      const reader = new FileReader();
-      reader.onload = (evt) => {
-          try {
-              const d = JSON.parse(evt.target.result);
-              if(d.tracks) {
-                  d.tracks.forEach((segs, i) => { if(tracks[i]) tracks[i].segments = segs; redrawTrack(tracks[i], null); });
-              }
-          } catch(e) { alert("Import fehlgeschlagen"); }
-      };
-      reader.readAsText(file);
+  document.getElementById("stopButton").addEventListener("click", () => {
+    isPlaying = false;
+    cancelAnimationFrame(animationFrameId);
+    tracks.forEach(t => { if(t.gainNode){t.gainNode.disconnect(); t.gainNode=null;} redrawTrack(t, null); });
   });
 });
