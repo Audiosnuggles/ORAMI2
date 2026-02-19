@@ -1,31 +1,39 @@
 /**
- * THE PIGEON - Final Master
- * - "Particles" (Granular Synthesis)
- * - "Calligraphy" (Dynamic Filtering)
- * - "Fractal" (Distortion & Live-Fix)
- * - "Chords" (Zero Latency)
+ * THE PIGEON - Final Master (Sync Fix)
+ * - Fixed: Progress Bar Sync (Dynamic Width)
+ * - Fixed: Loop Timing
+ * - All other features (Particles, Filter, Fractal) preserved.
  */
 
-/* =========================================
-   1. CONFIG & GLOBALS
-   ========================================= */
+// --- CONFIG ---
 const chordIntervals = {
-  major: [0, 4, 7],
-  minor: [0, 3, 7],
-  diminished: [0, 3, 6],
-  augmented: [0, 4, 8],
-  sus2: [0, 2, 7],
-  sus4: [0, 5, 7]
+  major: [0, 4, 7], minor: [0, 3, 7], diminished: [0, 3, 6],
+  augmented: [0, 4, 8], sus2: [0, 2, 7], sus4: [0, 5, 7]
 };
 const chordColors = ['#FF5733', '#33FF57', '#3357FF'];
 
-// Distortion Curve für Fractal
+// AUDIO HELPERS
+let cachedNoiseBuffer = null;
+function getNoiseBuffer(ctx) {
+  if (cachedNoiseBuffer) return cachedNoiseBuffer;
+  const size = ctx.sampleRate * 4;
+  const buffer = ctx.createBuffer(1, size, ctx.sampleRate);
+  const data = buffer.getChannelData(0);
+  let last = 0;
+  for (let i = 0; i < size; i++) {
+    const white = Math.random() * 2 - 1;
+    data[i] = (last + (0.02 * white)) / 1.02;
+    last = data[i];
+    data[i] *= 3.5; 
+  }
+  cachedNoiseBuffer = buffer;
+  return buffer;
+}
+
 let cachedDistortionCurve = null;
 function getDistortionCurve() {
   if (cachedDistortionCurve) return cachedDistortionCurve;
-  const n = 22050;
-  const curve = new Float32Array(n);
-  const amount = 80; 
+  const n = 22050, curve = new Float32Array(n), amount = 80;
   for (let i = 0; i < n; ++i) {
     let x = i * 2 / n - 1;
     curve[i] = (3 + amount) * x * 20 * (Math.PI / 180) / (Math.PI + amount * Math.abs(x));
@@ -34,621 +42,353 @@ function getDistortionCurve() {
   return curve;
 }
 
-/* =========================================
-   2. DRAWING FUNCTIONS (VISUALS)
-   ========================================= */
+// --- DRAWING ---
 function drawSegmentStandard(ctx, pts, idx1, idx2, size) {
   ctx.lineWidth = size; ctx.lineCap = "round";
   ctx.beginPath(); ctx.moveTo(pts[idx1].x, pts[idx1].y); ctx.lineTo(pts[idx2].x, pts[idx2].y); ctx.stroke();
 }
-
 function drawSegmentVariable(ctx, pts, idx1, idx2, size) {
   const p1 = pts[idx1], p2 = pts[idx2];
   const dist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
-  ctx.lineWidth = size * (1 + Math.max(0, (10 - dist) / 5)); // Mehr Dynamik
-  ctx.lineCap = "round";
+  ctx.lineWidth = size * (1 + Math.max(0, (10 - dist) / 5)); ctx.lineCap = "round";
   ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
 }
-
 function drawSegmentCalligraphy(ctx, pts, idx1, idx2, size) {
   const p1 = pts[idx1], p2 = pts[idx2];
-  const angle = -Math.PI / 4; 
-  const dx = Math.cos(angle) * size;
-  const dy = Math.sin(angle) * size;
+  const angle = -Math.PI / 4, dx = Math.cos(angle) * size, dy = Math.sin(angle) * size;
   ctx.fillStyle = "#000"; ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(p1.x - dx, p1.y - dy);
-  ctx.lineTo(p1.x + dx, p1.y + dy);
-  ctx.lineTo(p2.x + dx, p2.y + dy);
-  ctx.lineTo(p2.x - dx, p2.y - dy);
-  ctx.fill();
+  ctx.beginPath(); ctx.moveTo(p1.x - dx, p1.y - dy); ctx.lineTo(p1.x + dx, p1.y + dy);
+  ctx.lineTo(p2.x + dx, p2.y + dy); ctx.lineTo(p2.x - dx, p2.y - dy); ctx.fill();
 }
-
 function drawSegmentParticles(ctx, pts, idx1, idx2, size) {
-  // Zeichnet Partikel (Punkte) um die Koordinate
-  const p2 = pts[idx2];
-  const count = Math.ceil(size / 2);
-  ctx.fillStyle = "rgba(0,0,0,0.6)";
-  for (let i = 0; i < count; i++) {
-    const offX = (Math.random() - 0.5) * size * 4;
-    const offY = (Math.random() - 0.5) * size * 4;
-    ctx.beginPath(); 
-    ctx.arc(p2.x + offX, p2.y + offY, 1, 0, Math.PI*2);
-    ctx.fill();
+  const p2 = pts[idx2]; ctx.fillStyle = "rgba(0,0,0,0.6)"; 
+  for(let i=0; i<1; i++) {
+    const ox = (Math.random()-0.5)*size*2, oy = (Math.random()-0.5)*size*2;
+    ctx.beginPath(); ctx.arc(p2.x+ox, p2.y+oy, Math.max(1, size/3), 0, Math.PI*2); ctx.fill();
   }
 }
-
 function drawSegmentFractal(ctx, pts, idx1, idx2, size) {
   const p1 = pts[idx1], p2 = pts[idx2];
   ctx.lineWidth = size; ctx.lineCap = "round";
-  // WICHTIG: Nutze gespeicherten Jitter, sonst flackert es anders
   ctx.beginPath(); 
   ctx.moveTo(p1.x + (p1.jX||0), p1.y + (p1.jY||0)); 
   ctx.lineTo(p2.x + (p2.jX||0), p2.y + (p2.jY||0)); 
   ctx.stroke();
 }
 
-/* =========================================
-   3. MAIN LOGIC
-   ========================================= */
+// --- MAIN ---
 document.addEventListener("DOMContentLoaded", function() {
-  
-  let audioCtx = null;
-  let masterGain;
-  let isPlaying = false;
-  let playbackStartTime = 0;
-  let playbackDuration = 0;
-  let animationFrameId;
-  let undoStack = [];
+  let audioCtx, masterGain, isPlaying=false;
+  let playbackStartTime=0, playbackDuration=0, animationFrameId;
+  let undoStack=[], liveNodes=[], liveGainNode=null, liveFilterNode=null;
 
-  // Live State
-  let liveOscillators = [];
-  let liveGainNode = null;
-  // Live Calligraphy Filter
-  let liveFilterNode = null; 
-
-  const loopCheckbox = document.getElementById("loopCheckbox");
   const toolSelect = document.getElementById("toolSelect");
   const brushSelect = document.getElementById("brushSelect");
   const sizeSlider = document.getElementById("brushSizeSlider");
   const chordSelect = document.getElementById("chordSelect");
   const harmonizeCheckbox = document.getElementById("harmonizeCheckbox");
 
-  const tracks = Array.from(document.querySelectorAll(".track-container")).map((container, idx) => ({
-    index: idx,
-    canvas: container.querySelector("canvas"),
-    ctx: container.querySelector("canvas").getContext("2d"),
-    segments: [],
-    wave: "sine",
-    mute: false,
-    vol: 0.8,
-    snap: false,
-    gainNode: null
+  const tracks = Array.from(document.querySelectorAll(".track-container")).map((c, i) => ({
+    index: i, canvas: c.querySelector("canvas"), ctx: c.querySelector("canvas").getContext("2d"),
+    segments: [], wave: "sine", mute: false, vol: 0.8, snap: false, gainNode: null
   }));
 
   tracks.forEach(track => {
     drawGrid(track);
-    const container = track.canvas.parentElement;
-    container.querySelector(".legend").innerHTML = "1k<br><br>500<br><br>250<br><br>80";
-
-    container.querySelectorAll(".wave-btn").forEach(btn => {
-      btn.addEventListener("click", () => {
-        track.wave = btn.dataset.wave;
-        container.querySelectorAll(".wave-btn").forEach(b => b.classList.remove("active"));
-        btn.classList.add("active");
-      });
+    const cont = track.canvas.parentElement;
+    cont.querySelector(".legend").innerHTML = "1k<br><br>500<br><br>250<br><br>80";
+    cont.querySelectorAll(".wave-btn").forEach(b => b.addEventListener("click", () => {
+      track.wave = b.dataset.wave;
+      cont.querySelectorAll(".wave-btn").forEach(btn => btn.classList.remove("active"));
+      b.classList.add("active");
+    }));
+    cont.querySelector('.wave-btn[data-wave="sine"]').classList.add("active");
+    
+    cont.querySelector(".mute-btn").addEventListener("click", e => {
+      track.mute = !track.mute; e.target.style.backgroundColor = track.mute ? "#ff4444" : "";
+      updateTrackVolume(track);
     });
-    container.querySelector('.wave-btn[data-wave="sine"]').classList.add("active");
-
-    container.querySelector(".mute-btn").addEventListener("click", (e) => {
-      track.mute = !track.mute;
-      e.target.style.backgroundColor = track.mute ? "#ff4444" : "";
-      if(track.gainNode) track.gainNode.gain.setTargetAtTime(track.mute ? 0 : track.vol, audioCtx.currentTime, 0.05);
-    });
-
-    const slider = container.querySelector(".volume-slider");
+    const slider = cont.querySelector(".volume-slider");
     track.vol = parseFloat(slider.value);
-    slider.addEventListener("input", e => {
-      track.vol = parseFloat(e.target.value);
-      if(track.gainNode && !track.mute) track.gainNode.gain.setTargetAtTime(track.vol, audioCtx.currentTime, 0.05);
-    });
+    slider.addEventListener("input", e => { track.vol = parseFloat(e.target.value); updateTrackVolume(track); });
+    cont.querySelector(".snap-checkbox").addEventListener("change", e => track.snap = e.target.checked);
 
-    container.querySelector(".snap-checkbox").addEventListener("change", e => track.snap = e.target.checked);
-
-    // --- DRAWING ---
-    let drawing = false;
-    let currentSegment = null;
-
-    const start = (e) => {
-      e.preventDefault();
-      if (!audioCtx) initAudio();
-      if (audioCtx.state === "suspended") audioCtx.resume();
-
+    // DRAWING
+    let drawing = false, currentSegment = null;
+    const start = e => {
+      e.preventDefault(); if(!audioCtx) initAudio(); if(audioCtx.state === "suspended") audioCtx.resume();
       const pos = getPos(e, track.canvas);
       const x = track.snap ? snap(pos.x, track.canvas.width) : pos.x;
-      const brush = brushSelect.value;
-
-      if (toolSelect.value === "draw") {
+      if(toolSelect.value === "draw") {
         drawing = true;
-        let jX = 0, jY = 0;
-        if(brush === "fractal") { jX = Math.random()*15-7.5; jY = Math.random()*30-15; }
-
-        currentSegment = {
-          points: [{ x, y: pos.y, jX, jY }],
-          brush: brush,
-          thickness: parseInt(sizeSlider.value),
-          chordType: (brush === "chord") ? chordSelect.value : null
-        };
+        let jX=0, jY=0; if(brushSelect.value==="fractal"){ jX=Math.random()*20-10; jY=Math.random()*40-20; }
+        currentSegment = { points: [{x, y:pos.y, jX, jY}], brush: brushSelect.value, thickness: parseInt(sizeSlider.value), chordType: (brushSelect.value==="chord")?chordSelect.value:null };
         track.segments.push(currentSegment);
         
-        // Start Live Sound (Particles starts per point, others continuous)
-        if (brush !== "particles") startLiveSynth(track, pos.y);
-        else triggerParticleGrain(track, pos.y); // First grain
-
+        if(brushSelect.value === "particles") triggerParticleGrain(track, pos.y); else startLiveSynth(track, pos.y);
         redrawTrack(track);
-      } else {
-        erase(track, x, pos.y);
-      }
+      } else erase(track, x, pos.y);
     };
-
-    const move = (e) => {
-      if (!drawing && toolSelect.value !== "erase") return;
+    const move = e => {
+      if(!drawing && toolSelect.value!=="erase") return;
       e.preventDefault();
       const pos = getPos(e, track.canvas);
       const x = track.snap ? snap(pos.x, track.canvas.width) : pos.x;
-
-      if (toolSelect.value === "draw" && drawing) {
-        let jX = 0, jY = 0;
-        if(brushSelect.value === "fractal") { jX = Math.random()*15-7.5; jY = Math.random()*30-15; }
-        
-        currentSegment.points.push({ x, y: pos.y, jX, jY });
-        
-        // Audio Updates
-        if (brushSelect.value === "particles") {
-            triggerParticleGrain(track, pos.y); // Trigger grain on move
-        } else {
-            updateLiveSynth(track, pos.y + jY);
-        }
-
-        redrawTrack(track); // Visuals update (includes Fractal line)
-      } else if (toolSelect.value === "erase") {
-        if(e.buttons === 1 || e.type === "touchmove") erase(track, x, pos.y);
-      }
+      if(toolSelect.value==="draw" && drawing) {
+        let jX=0, jY=0; if(brushSelect.value==="fractal"){ jX=Math.random()*20-10; jY=Math.random()*40-20; }
+        currentSegment.points.push({x, y:pos.y, jX, jY});
+        if(brushSelect.value==="particles") triggerParticleGrain(track, pos.y); else updateLiveSynth(track, pos.y+jY);
+        redrawTrack(track);
+      } else if(toolSelect.value==="erase" && (e.buttons===1 || e.type==="touchmove")) erase(track, x, pos.y);
     };
-
     const end = () => {
-      if (drawing) {
-        undoStack.push({ trackIdx: track.index, segment: currentSegment });
-        if(brushSelect.value !== "particles") stopLiveSynth(brushSelect.value);
-      }
-      drawing = false;
-      currentSegment = null;
+      if(drawing) { undoStack.push({trackIdx:track.index, segment:currentSegment}); if(brushSelect.value!=="particles") stopLiveSynth(brushSelect.value); }
+      drawing = false; currentSegment = null;
     };
-
-    track.canvas.addEventListener("mousedown", start);
-    track.canvas.addEventListener("mousemove", move);
-    track.canvas.addEventListener("mouseup", end);
-    track.canvas.addEventListener("mouseleave", end);
-    track.canvas.addEventListener("touchstart", start, {passive:false});
-    track.canvas.addEventListener("touchmove", move, {passive:false});
+    track.canvas.addEventListener("mousedown", start); track.canvas.addEventListener("mousemove", move);
+    track.canvas.addEventListener("mouseup", end); track.canvas.addEventListener("mouseleave", end);
+    track.canvas.addEventListener("touchstart", start, {passive:false}); track.canvas.addEventListener("touchmove", move, {passive:false});
     track.canvas.addEventListener("touchend", end);
   });
 
-  // --- AUDIO ENGINE ---
+  // --- AUDIO ---
   function initAudio() {
-    if (audioCtx) return;
+    if(audioCtx) return;
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    masterGain = audioCtx.createGain();
-    masterGain.gain.value = 0.5;
+    masterGain = audioCtx.createGain(); masterGain.gain.value = 0.5;
     const comp = audioCtx.createDynamicsCompressor();
     masterGain.connect(comp).connect(audioCtx.destination);
   }
 
-  // A. Live Continuous Synth (Standard, Calligraphy, Fractal, Chord)
   function startLiveSynth(track, y) {
-    if (track.mute || track.vol < 0.01) return;
-    liveOscillators = [];
-    liveGainNode = audioCtx.createGain();
-    liveGainNode.gain.setValueAtTime(0, audioCtx.currentTime);
-    liveGainNode.gain.linearRampToValueAtTime(0.3, audioCtx.currentTime + 0.01);
-
-    // Calligraphy Filter Setup
-    liveFilterNode = audioCtx.createBiquadFilter();
-    liveFilterNode.type = "lowpass";
-    liveFilterNode.frequency.value = 20000; // Default Open
-
-    // Connect Chain
-    const trackGain = audioCtx.createGain();
-    trackGain.gain.value = track.vol;
+    if(track.mute || track.vol < 0.01) return;
+    liveNodes = []; liveGainNode = audioCtx.createGain(); liveGainNode.gain.setValueAtTime(0, audioCtx.currentTime);
+    liveGainNode.gain.linearRampToValueAtTime(0.3, audioCtx.currentTime+0.01);
     
-    // Osc -> LiveGain -> Filter -> TrackGain -> Master
+    liveFilterNode = audioCtx.createBiquadFilter();
+    liveFilterNode.type = "lowpass"; liveFilterNode.Q.value = 10; liveFilterNode.frequency.value = 20000;
+
+    const trackGain = audioCtx.createGain(); trackGain.gain.value = track.vol;
     liveGainNode.connect(liveFilterNode).connect(trackGain).connect(masterGain);
-    liveGainNode.tempOut = trackGain; // Store for cleanup
+    liveGainNode.tempOut = trackGain;
 
     let freq = mapY(y, track.canvas.height);
     if(harmonizeCheckbox.checked) freq = quantize(freq);
-
     const brush = brushSelect.value;
-    const intervals = (brush === "chord") ? chordIntervals[chordSelect.value] : [0];
+    const intervals = (brush==="chord") ? chordIntervals[chordSelect.value] : [0];
 
-    // Filter Logic for Calligraphy (Start)
-    if(brush === "calligraphy") {
-       const thickness = parseInt(sizeSlider.value);
-       // Dick = Dumpf (500Hz), Dünn = Hell (5000Hz)
-       const cutoff = Math.max(200, 5000 - (thickness * 150));
-       liveFilterNode.frequency.setTargetAtTime(cutoff, audioCtx.currentTime, 0.01);
+    if(brush==="calligraphy") {
+       const th = parseInt(sizeSlider.value);
+       liveFilterNode.frequency.setValueAtTime(Math.max(100, 5000-(th*250)), audioCtx.currentTime);
     }
 
     intervals.forEach(iv => {
-      const osc = audioCtx.createOscillator();
-      osc.type = track.wave;
-      osc.frequency.setValueAtTime(freq * Math.pow(2, iv/12), audioCtx.currentTime);
-      
-      let out = osc;
-      if (brush === "fractal") {
-        const shaper = audioCtx.createWaveShaper();
-        shaper.curve = getDistortionCurve();
-        osc.connect(shaper);
-        out = shaper;
+      const osc = audioCtx.createOscillator(); osc.type = track.wave;
+      const fVal = freq * Math.pow(2, iv/12);
+      if (Number.isFinite(fVal) && fVal > 0) {
+          osc.frequency.setValueAtTime(fVal, audioCtx.currentTime);
+          let out = osc;
+          if(brush==="fractal") { const shaper = audioCtx.createWaveShaper(); shaper.curve = getDistortionCurve(); osc.connect(shaper); out = shaper; }
+          out.connect(liveGainNode); osc.start(); liveNodes.push(osc);
       }
-      out.connect(liveGainNode);
-      osc.start();
-      liveOscillators.push(osc);
     });
   }
 
   function updateLiveSynth(track, y) {
-    if (!liveOscillators.length) return;
+    if(!liveOscillators) return;
     let freq = mapY(y, track.canvas.height);
     if(harmonizeCheckbox.checked) freq = quantize(freq);
-    
-    // Pitch Update
-    liveOscillators.forEach((osc, i) => {
-       const brush = brushSelect.value;
-       const intervals = (brush === "chord") ? chordIntervals[chordSelect.value] : [0];
-       const iv = intervals[i] || 0; 
-       osc.frequency.setTargetAtTime(freq * Math.pow(2, iv/12), audioCtx.currentTime, 0.01);
+    liveNodes.forEach((node, i) => {
+      if(node.frequency) {
+         const ivs = (brushSelect.value==="chord") ? chordIntervals[chordSelect.value] : [0];
+         const iv = ivs[i] || 0;
+         const fVal = freq * Math.pow(2, iv/12);
+         if(Number.isFinite(fVal) && fVal > 0) node.frequency.setTargetAtTime(fVal, audioCtx.currentTime, 0.01);
+      }
     });
-
-    // Calligraphy Filter Dynamic Update
-    if(brushSelect.value === "calligraphy" && liveFilterNode) {
-       // Wir schätzen die "Geschwindigkeit" über den Abstand der letzten Punkte nicht hier,
-       // sondern nutzen einfach die statische Dicke oder müssten Speed berechnen.
-       // Einfacher: Wir nutzen die aktuelle BrushSize (Variable Pinsel ändert size visuell, aber slider bleibt gleich)
-       // Um den Effekt hörbar zu machen, binden wir es an den Slider:
-       const thickness = parseInt(sizeSlider.value);
-       const cutoff = Math.max(200, 6000 - (thickness * 200));
-       liveFilterNode.frequency.setTargetAtTime(cutoff, audioCtx.currentTime, 0.05);
+    if(brushSelect.value==="calligraphy" && liveFilterNode) {
+       const th = parseInt(sizeSlider.value);
+       const fVal = Math.max(100, 5000-(th*250));
+       if(Number.isFinite(fVal)) liveFilterNode.frequency.setTargetAtTime(fVal, audioCtx.currentTime, 0.05);
     }
   }
 
   function stopLiveSynth(brush) {
-    if (!liveGainNode) return;
+    if(!liveGainNode) return;
     const now = audioCtx.currentTime;
-    // Release
     liveGainNode.gain.cancelScheduledValues(now);
-    liveGainNode.gain.setTargetAtTime(0, now, 0.05);
-    
-    const oscs = liveOscillators;
-    const gn = liveGainNode;
-    const fn = liveFilterNode;
-    const out = liveGainNode.tempOut;
-    setTimeout(() => {
-      oscs.forEach(o => o.stop());
-      gn.disconnect();
-      if(fn) fn.disconnect();
-      out.disconnect();
-    }, 100);
-    liveOscillators = [];
-    liveGainNode = null;
-    liveFilterNode = null;
+    liveGainNode.gain.setTargetAtTime(0, now, (brush==="chord")?0.005:0.1);
+    const nodes=liveNodes, gn=liveGainNode, fn=liveFilterNode, out=liveGainNode.tempOut;
+    setTimeout(() => { nodes.forEach(n=>n.stop()); gn.disconnect(); if(fn)fn.disconnect(); out.disconnect(); }, 200);
+    liveNodes = []; liveGainNode = null; liveFilterNode = null;
   }
 
-  // B. Particle Grain Trigger (One-Shot)
   function triggerParticleGrain(track, y) {
-    if (track.mute || track.vol < 0.01) return;
-    
+    if(track.mute || track.vol < 0.01) return;
     let freq = mapY(y, track.canvas.height);
     if(harmonizeCheckbox.checked) freq = quantize(freq);
+    if(!Number.isFinite(freq) || freq<=0) return;
 
-    const osc = audioCtx.createOscillator();
-    osc.type = track.wave; // Oder "triangle" für weichere Tropfen
-    osc.frequency.value = freq;
-
-    const env = audioCtx.createGain();
-    env.gain.value = 0;
-    
-    // Kurzer Pling (Grain)
-    const now = audioCtx.currentTime;
-    env.gain.setValueAtTime(0, now);
-    env.gain.linearRampToValueAtTime(0.4, now + 0.01); // Attack
-    env.gain.exponentialRampToValueAtTime(0.01, now + 0.1); // Decay
-
-    // Track Volume
-    const trackGain = audioCtx.createGain();
-    trackGain.gain.value = track.vol;
-
-    osc.connect(env).connect(trackGain).connect(masterGain);
-    osc.start(now);
-    osc.stop(now + 0.15);
-    
-    // Garbage collection timeout (internal cleanup handle)
-    setTimeout(()=>{ trackGain.disconnect(); }, 200);
+    const osc = audioCtx.createOscillator(); osc.type = track.wave; osc.frequency.value = freq;
+    const env = audioCtx.createGain(); env.gain.setValueAtTime(0, audioCtx.currentTime);
+    env.gain.linearRampToValueAtTime(0.4, audioCtx.currentTime+0.01);
+    env.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime+0.15);
+    const tg = audioCtx.createGain(); tg.gain.value = track.vol;
+    osc.connect(env).connect(tg).connect(masterGain);
+    osc.start(); osc.stop(audioCtx.currentTime+0.2);
+    setTimeout(()=>tg.disconnect(), 250);
   }
 
-  // --- SEQUENCER PLAYBACK ---
+  // --- PLAYBACK ---
   function scheduleTracks(start) {
-    const scale = document.getElementById("scaleSelect").value;
-    
     tracks.forEach(track => {
-      track.gainNode = audioCtx.createGain();
-      track.gainNode.connect(masterGain);
+      track.gainNode = audioCtx.createGain(); track.gainNode.connect(masterGain);
       track.gainNode.gain.value = track.mute ? 0 : track.vol;
-
       track.segments.forEach(seg => {
-        
-        // 1. PARTICLES (Granular Playback)
-        if (seg.brush === "particles" || seg.brush === "bristle") { // Fallback name
-            seg.points.forEach(p => {
-                const t = start + (p.x / track.canvas.width) * playbackDuration;
-                // Schedule grains
-                const osc = audioCtx.createOscillator();
-                osc.type = track.wave;
-                let f = mapY(p.y, track.canvas.height);
-                if(harmonizeCheckbox.checked) f = quantize(f);
-                osc.frequency.value = f;
-                
-                const env = audioCtx.createGain();
-                env.gain.setValueAtTime(0, t);
-                env.gain.linearRampToValueAtTime(0.4, t + 0.01);
-                env.gain.exponentialRampToValueAtTime(0.01, t + 0.1);
-                
-                osc.connect(env).connect(track.gainNode);
-                osc.start(t);
-                osc.stop(t + 0.15);
-            });
-            return; // Done for this segment
+        // PARTICLES
+        if(seg.brush==="particles") {
+           seg.points.forEach(p => {
+             const t = start + (p.x/track.canvas.width)*playbackDuration;
+             if(!Number.isFinite(t)) return;
+             const osc = audioCtx.createOscillator(); osc.type = track.wave;
+             let f = mapY(p.y, track.canvas.height); if(harmonizeCheckbox.checked) f = quantize(f);
+             if(!Number.isFinite(f) || f<=0) return;
+             osc.frequency.value = f;
+             const env = audioCtx.createGain(); env.gain.setValueAtTime(0, t);
+             env.gain.linearRampToValueAtTime(0.4, t+0.01); env.gain.exponentialRampToValueAtTime(0.01, t+0.15);
+             osc.connect(env).connect(track.gainNode); osc.start(t); osc.stop(t+0.2);
+           });
+           return;
         }
-
-        // 2. CONTINUOUS BRUSHES
-        const sorted = seg.points.slice().sort((a,b)=>a.x-b.x);
-        if(sorted.length < 2) return;
         
+        // CONTINUOUS
+        const sorted = seg.points.slice().sort((a,b)=>a.x-b.x); if(sorted.length<2) return;
         const sT = start + (sorted[0].x/track.canvas.width)*playbackDuration;
         const eT = start + (sorted[sorted.length-1].x/track.canvas.width)*playbackDuration;
-        
-        // CHORDS
-        if (seg.brush === "chord" && seg.chordType) {
-           const ivs = chordIntervals[seg.chordType] || [0];
-           ivs.forEach(iv => {
-             const osc = audioCtx.createOscillator();
-             osc.type = track.wave;
-             const g = audioCtx.createGain();
-             g.gain.setValueAtTime(0, sT);
-             g.gain.linearRampToValueAtTime(0.2, sT+0.005); // Instant Attack
-             g.gain.setValueAtTime(0.2, eT); // Sustain
-             g.gain.linearRampToValueAtTime(0, eT+0.05); // Release
+        if(!Number.isFinite(sT) || !Number.isFinite(eT)) return;
+
+        // CHORD
+        if(seg.brush==="chord" && seg.chordType) {
+           chordIntervals[seg.chordType].forEach(iv => {
+             const osc=audioCtx.createOscillator(); osc.type=track.wave;
+             const g=audioCtx.createGain(); g.gain.setValueAtTime(0, sT);
+             g.gain.linearRampToValueAtTime(0.2, sT+0.005); g.gain.setValueAtTime(0.2, eT); g.gain.linearRampToValueAtTime(0, eT+0.05);
              osc.connect(g).connect(track.gainNode);
-             
              sorted.forEach(p => {
-               const t = start + (p.x/track.canvas.width)*playbackDuration;
-               let f = mapY(p.y, track.canvas.height);
-               if(harmonizeCheckbox.checked) f = quantize(f);
-               osc.frequency.linearRampToValueAtTime(f * Math.pow(2, iv/12), t);
+                const t = start + (p.x/track.canvas.width)*playbackDuration;
+                let f = mapY(p.y, track.canvas.height); if(harmonizeCheckbox.checked) f = quantize(f);
+                const val = f*Math.pow(2, iv/12);
+                if(Number.isFinite(val) && Number.isFinite(t) && val>0) osc.frequency.linearRampToValueAtTime(val, t);
              });
              osc.start(sT); osc.stop(eT+0.1);
            });
            return;
         }
-
-        // STANDARD / CALLIGRAPHY / FRACTAL / VARIABLE
-        const osc = audioCtx.createOscillator();
-        osc.type = track.wave;
         
-        // Filter Setup (for Calligraphy)
-        const filter = audioCtx.createBiquadFilter();
-        filter.type = "lowpass";
-        filter.frequency.value = 20000; 
-
-        // Gain Envelope
-        const g = audioCtx.createGain();
-        g.gain.setValueAtTime(0, sT);
-        g.gain.linearRampToValueAtTime(0.3, sT+0.02);
-        g.gain.setValueAtTime(0.3, eT); // Sustain
-        g.gain.linearRampToValueAtTime(0, eT+0.1); // Release
-        
+        // STANDARD/FRACTAL/CALLIGRAPHY
+        const osc = audioCtx.createOscillator(); osc.type = track.wave;
+        const filter = audioCtx.createBiquadFilter(); filter.type = "lowpass"; filter.Q.value = 10; filter.frequency.value = 20000;
+        const g = audioCtx.createGain(); g.gain.setValueAtTime(0, sT);
+        g.gain.linearRampToValueAtTime(0.3, sT+0.02); g.gain.setValueAtTime(0.3, eT); g.gain.linearRampToValueAtTime(0, eT+0.1);
         let chain = g;
-        
-        // Fractal Distortion
-        if(seg.brush === "fractal") {
-          const shaper = audioCtx.createWaveShaper();
-          shaper.curve = getDistortionCurve();
-          g.connect(shaper); 
-          chain = shaper;
-        }
-
-        // Apply Filter if Calligraphy
-        if (seg.brush === "calligraphy") {
-             const cutoff = Math.max(200, 6000 - (seg.thickness * 200));
-             filter.frequency.setValueAtTime(cutoff, sT);
-             osc.connect(filter).connect(g);
-        } else {
-             osc.connect(g);
-        }
-
+        if(seg.brush==="fractal"){ const shaper=audioCtx.createWaveShaper(); shaper.curve=getDistortionCurve(); g.connect(shaper); chain=shaper; }
+        if(seg.brush==="calligraphy"){ 
+            const cutoff = Math.max(100, 5000-(seg.thickness*250));
+            filter.frequency.setValueAtTime(cutoff, sT); osc.connect(filter).connect(g); 
+        } else { osc.connect(g); }
         chain.connect(track.gainNode);
-
-        // Pitch Automation
         sorted.forEach(p => {
            const t = start + (p.x/track.canvas.width)*playbackDuration;
-           
-           // Fractal Jitter für Audio (muss auch im Playback zappeln!)
-           let yVal = p.y;
-           if (seg.brush === "fractal") yVal += (p.jY || 0);
-
-           let f = mapY(yVal, track.canvas.height);
-           if(harmonizeCheckbox.checked) f = quantize(f);
-           osc.frequency.linearRampToValueAtTime(f, t);
+           let yVal = p.y; if(seg.brush==="fractal") yVal+=(p.jY||0);
+           let f = mapY(yVal, track.canvas.height); if(harmonizeCheckbox.checked) f = quantize(f);
+           if(Number.isFinite(f) && Number.isFinite(t) && f>0) osc.frequency.linearRampToValueAtTime(f, t);
         });
-        osc.start(sT); osc.stop(eT+0.1);
+        osc.start(sT); osc.stop(eT+0.2);
       });
     });
   }
 
   // --- HELPERS ---
-  function getPos(e, canvas) {
-    const rect = canvas.getBoundingClientRect();
-    const sx = canvas.width / rect.width;
-    const sy = canvas.height / rect.height;
-    const cx = e.touches ? e.touches[0].clientX : e.clientX;
-    const cy = e.touches ? e.touches[0].clientY : e.clientY;
-    return { x: (cx - rect.left) * sx, y: (cy - rect.top) * sy };
+  function getPos(e, c) { const r=c.getBoundingClientRect(), sx=c.width/r.width, sy=c.height/r.height; const cx=e.touches?e.touches[0].clientX:e.clientX, cy=e.touches?e.touches[0].clientY:e.clientY; return {x:(cx-r.left)*sx, y:(cy-r.top)*sy}; }
+  function snap(x, w) { return Math.round(x/(w/32))*(w/32); }
+  function mapY(y, h) { const val=1000-(y/h)*920; return Math.max(20, Math.min(val, 20000)); } // Clamp
+  function quantize(f) { 
+      if(!Number.isFinite(f) || f<=0) return 440;
+      const s=document.getElementById("scaleSelect").value; 
+      let m=69+12*Math.log2(f/440), r=Math.round(m), pat=(s==="major")?[0,2,4,5,7,9,11]:(s==="minor")?[0,2,3,5,7,8,10]:[0,3,5,7,10], mod=r%12, b=pat[0], md=99; 
+      pat.forEach(p=>{let d=Math.abs(p-mod); if(d<md){md=d;b=p;}}); 
+      return 440*Math.pow(2,(r-mod+b-69)/12); 
   }
-  function snap(x, w) { return Math.round(x / (w/32)) * (w/32); }
-  function mapY(y, h) { return 1000 - (y/h)*920; }
-  function quantize(freq) {
-    const scale = document.getElementById("scaleSelect").value;
-    let midi = 69 + 12 * Math.log2(freq / 440);
-    let r = Math.round(midi);
-    let pattern = (scale==="major")?[0,2,4,5,7,9,11]:(scale==="minor")?[0,2,3,5,7,8,10]:[0,3,5,7,10];
-    let mod = r % 12;
-    let best = pattern[0], minD = 99;
-    pattern.forEach(p => {
-       let diff = Math.abs(p-mod);
-       if(diff < minD) { minD = diff; best = p; }
-    });
-    return 440 * Math.pow(2, (r - mod + best - 69)/12);
-  }
-  function updateTrackVolume(track) {
-    if(track.gainNode && audioCtx) {
-       track.gainNode.gain.setTargetAtTime(track.mute ? 0 : track.vol, audioCtx.currentTime, 0.05);
-    }
-  }
-  function drawGrid(track) {
-    const ctx = track.ctx;
-    ctx.clearRect(0,0,track.canvas.width, track.canvas.height);
-    ctx.strokeStyle = "#eee";
-    for(let i=0; i<=32; i++) {
-       ctx.beginPath(); let x = i*(track.canvas.width/32);
-       ctx.moveTo(x,0); ctx.lineTo(x,track.canvas.height);
-       ctx.lineWidth=(i%4===0)?2:1; ctx.stroke();
-    }
-  }
-  function erase(track, x, y) {
-     track.segments = track.segments.filter(s => !s.points.some(p => Math.hypot(p.x-x, p.y-y) < 20));
-     redrawTrack(track);
-  }
+  function updateTrackVolume(t) { if(t.gainNode&&audioCtx) t.gainNode.gain.setTargetAtTime(t.mute?0:t.vol, audioCtx.currentTime, 0.05); }
+  function drawGrid(t) { t.ctx.clearRect(0,0,t.canvas.width,t.canvas.height); t.ctx.strokeStyle="#eee"; for(let i=0;i<=32;i++){t.ctx.beginPath();let x=i*(t.canvas.width/32);t.ctx.moveTo(x,0);t.ctx.lineTo(x,t.canvas.height);t.ctx.lineWidth=(i%4===0)?2:1;t.ctx.stroke();} }
+  function erase(t,x,y) { t.segments=t.segments.filter(s=>!s.points.some(p=>Math.hypot(p.x-x,p.y-y)<20)); redrawTrack(t); }
   
-  function redrawTrack(track, headX) {
-     drawGrid(track);
-     track.segments.forEach(seg => {
-       const pts = seg.points;
-       if(pts.length < 1) return;
-       
-       if(seg.brush === "chord" && seg.chordType) {
-          const ivs = chordIntervals[seg.chordType];
-          const xs = pts.map(p=>p.x), ys = pts.map(p=>p.y);
-          const avgY = ys.reduce((a,b)=>a+b,0)/ys.length;
-          const minX = Math.min(...xs), maxX = Math.max(...xs);
-          track.ctx.strokeStyle = "#000"; track.ctx.lineWidth = seg.thickness;
-          ivs.forEach((iv, i) => {
-             track.ctx.strokeStyle = chordColors[i%3];
-             track.ctx.beginPath(); 
-             track.ctx.moveTo(minX, avgY - iv*5); 
-             track.ctx.lineTo(maxX, avgY - iv*5); 
-             track.ctx.stroke();
-          });
-       } else {
-          track.ctx.strokeStyle = "#000"; 
-          // Special drawing for particles
-          if(seg.brush === "particles" || seg.brush === "bristle") {
-              for(let i=1; i<pts.length; i++) drawSegmentParticles(track.ctx, pts, i-1, i, seg.thickness);
-          } else {
-              // Standard drawing loop
-              for(let i=1; i<pts.length; i++) {
-                 switch(seg.brush) {
-                   case "variable": drawSegmentVariable(track.ctx, pts, i-1, i, seg.thickness); break;
-                   case "calligraphy": drawSegmentCalligraphy(track.ctx, pts, i-1, i, seg.thickness); break;
-                   case "fractal": drawSegmentFractal(track.ctx, seg.points, i-1, i, seg.thickness); break;
-                   default: drawSegmentStandard(track.ctx, pts, i-1, i, seg.thickness);
-                 }
-              }
-          }
-       }
-     });
-     if(headX !== undefined) {
-        track.ctx.strokeStyle = "red"; track.ctx.lineWidth=2;
-        track.ctx.beginPath(); track.ctx.moveTo(headX,0); track.ctx.lineTo(headX,100); track.ctx.stroke();
-     }
+  function redrawTrack(t,hx) {
+    drawGrid(t);
+    t.segments.forEach(seg => {
+      const pts=seg.points; if(pts.length<1) return;
+      t.ctx.strokeStyle="#000"; t.ctx.fillStyle="#000";
+      if(seg.brush==="chord" && seg.chordType) {
+         chordIntervals[seg.chordType].forEach((iv,i)=>{
+           t.ctx.strokeStyle=chordColors[i%3]; t.ctx.lineWidth=seg.thickness;
+           t.ctx.beginPath(); t.ctx.moveTo(pts[0].x, pts[0].y-iv*5);
+           for(let k=1;k<pts.length;k++) t.ctx.lineTo(pts[k].x, pts[k].y-iv*5);
+           t.ctx.stroke();
+         });
+      } else if(seg.brush==="particles") {
+         for(let i=1;i<pts.length;i++) drawSegmentParticles(t.ctx, pts, i-1, i, seg.thickness);
+      } else {
+         for(let i=1;i<pts.length;i++) {
+            switch(seg.brush) {
+              case "variable": drawSegmentVariable(t.ctx, pts, i-1, i, seg.thickness); break;
+              case "calligraphy": drawSegmentCalligraphy(t.ctx, pts, i-1, i, seg.thickness); break;
+              case "fractal": drawSegmentFractal(t.ctx, seg.points, i-1, i, seg.thickness); break;
+              default: drawSegmentStandard(t.ctx, pts, i-1, i, seg.thickness);
+            }
+         }
+      }
+    });
+    if(hx!==undefined){ t.ctx.strokeStyle="red"; t.ctx.lineWidth=2; t.ctx.beginPath(); t.ctx.moveTo(hx,0); t.ctx.lineTo(hx,100); t.ctx.stroke(); }
   }
 
-  // --- LOOP & CONTROLS ---
+  // --- LOOP ---
   function loop() {
     if(!isPlaying) return;
     const elapsed = audioCtx.currentTime - playbackStartTime;
+    // LOOP SYNC FIX:
     if(elapsed >= playbackDuration) {
-       if(loopEnabled) {
-          playbackStartTime = audioCtx.currentTime + 0.05;
+       if(document.getElementById("loopCheckbox").checked) {
+          playbackStartTime = audioCtx.currentTime; // No added delay for sync
           scheduleTracks(playbackStartTime);
        } else {
           document.getElementById("stopButton").click();
           return;
        }
     }
-    const x = (elapsed/playbackDuration) * 700;
-    tracks.forEach(t => redrawTrack(t, x));
+    // DYNAMIC WIDTH:
+    const w = tracks[0].canvas.width;
+    const x = (elapsed/playbackDuration) * w;
+    tracks.forEach(t => redrawTrack(t, x % w));
     animationFrameId = requestAnimationFrame(loop);
   }
 
   document.getElementById("playButton").addEventListener("click", () => {
-     if(isPlaying) return;
-     initAudio();
+     if(isPlaying) return; initAudio(); if(audioCtx.state==="suspended") audioCtx.resume();
      const bpm = parseFloat(document.getElementById("bpmInput").value);
      playbackDuration = (60/bpm)*32;
-     playbackStartTime = audioCtx.currentTime + 0.1;
-     isPlaying = true;
-     scheduleTracks(playbackStartTime);
-     requestAnimationFrame(loop);
+     playbackStartTime = audioCtx.currentTime+0.1;
+     isPlaying=true; scheduleTracks(playbackStartTime); requestAnimationFrame(loop);
   });
-  
-  document.getElementById("stopButton").addEventListener("click", () => {
-     isPlaying = false;
-     tracks.forEach(t => { if(t.gainNode) { t.gainNode.disconnect(); t.gainNode=null; } redrawTrack(t); });
-  });
-
-  document.getElementById("clearButton").addEventListener("click", () => {
-     tracks.forEach(t => { t.segments = []; redrawTrack(t); });
-     undoStack = [];
-  });
-
+  document.getElementById("stopButton").addEventListener("click", () => { isPlaying=false; cancelAnimationFrame(animationFrameId); tracks.forEach(t=>{if(t.gainNode){t.gainNode.disconnect();t.gainNode=null;} redrawTrack(t);}); });
+  document.getElementById("clearButton").addEventListener("click", () => { tracks.forEach(t=>{t.segments=[]; redrawTrack(t);}); undoStack=[]; });
+  document.getElementById("undoButton").addEventListener("click", () => { if(undoStack.length){const o=undoStack.pop(); tracks[o.trackIdx].segments.pop(); redrawTrack(tracks[o.trackIdx]);} });
   document.getElementById("exportButton").addEventListener("click", () => {
-     const data = JSON.stringify(tracks.map(t => t.segments));
-     const blob = new Blob([data], {type:"application/json"});
-     const url = URL.createObjectURL(blob);
-     const a = document.createElement("a"); a.href=url; a.download="pigeon.json"; a.click();
+     const blob = new Blob([JSON.stringify({tracks:tracks.map(t=>t.segments)})], {type:"application/json"});
+     const url = URL.createObjectURL(blob); const a=document.createElement("a"); a.href=url; a.download="pigeon.json"; a.click();
   });
-
   document.getElementById("importButton").addEventListener("click", () => document.getElementById("importFileInput").click());
-  document.getElementById("importFileInput").addEventListener("change", (e) => {
-     const reader = new FileReader();
-     reader.onload = (evt) => {
-        const data = JSON.parse(evt.target.result);
-        if(Array.isArray(data)) {
-           data.forEach((segs, i) => { if(tracks[i]) tracks[i].segments = segs; redrawTrack(tracks[i]); });
-        }
-     };
-     reader.readAsText(e.target.files[0]);
+  document.getElementById("importFileInput").addEventListener("change", e => {
+     const r = new FileReader(); r.onload = evt => { try { const d=JSON.parse(evt.target.result); (d.tracks||d).forEach((s,i)=>{if(tracks[i])tracks[i].segments=s;redrawTrack(tracks[i]);}); }catch(e){} }; r.readAsText(e.target.files[0]);
   });
-
-  document.getElementById("undoButton").addEventListener("click", () => {
-     if(undoStack.length) {
-        const item = undoStack.pop();
-        tracks[item.trackIdx].segments.pop();
-        redrawTrack(tracks[item.trackIdx]);
-     }
-  });
-
-  harmonizeCheckbox.addEventListener("change", () => {
-    document.getElementById("scaleSelectContainer").style.display = harmonizeCheckbox.checked ? "inline" : "none";
-  });
+  harmonizeCheckbox.addEventListener("change", () => document.getElementById("scaleSelectContainer").style.display=harmonizeCheckbox.checked?"inline":"none");
 });

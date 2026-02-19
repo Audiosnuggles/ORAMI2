@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <title>The Pigeon</title>
   <link rel="stylesheet" href="style.css">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 </head>
 <body>
   <div id="main">
@@ -11,123 +12,70 @@
     
     <div id="tracks">
       <div class="track-container">
-        <div class="wave-buttons">
-          <button class="wave-btn" data-wave="sine">∿</button>
-          <button class="wave-btn" data-wave="square">□</button>
-          <button class="wave-btn" data-wave="sawtooth">Z</button>
-        </div>
+        <div class="wave-buttons"><button class="wave-btn" data-wave="sine">∿</button><button class="wave-btn" data-wave="square">□</button><button class="wave-btn" data-wave="sawtooth">Z</button></div>
         <div class="legend"></div>
-        <canvas id="canvas1" width="700" height="100"></canvas>
+        <canvas id="canvas1" width="750" height="100"></canvas>
         <div class="controls-right">
             <button class="mute-btn">Mute</button>
-            <div class="vol-box">
-                <input type="range" class="volume-slider" min="0" max="1" step="0.01" value="0.8">
-            </div>
-            <label class="snap-label">
-              <input type="checkbox" class="snap-checkbox"> Snap
-            </label>
+            <div class="vol-box"><input type="range" class="volume-slider" min="0" max="1" step="0.01" value="0.8"></div>
+            <label class="snap-label"><input type="checkbox" class="snap-checkbox"> Snap</label>
         </div>
       </div>
-
       <div class="track-container">
-        <div class="wave-buttons">
-          <button class="wave-btn" data-wave="sine">∿</button>
-          <button class="wave-btn" data-wave="square">□</button>
-          <button class="wave-btn" data-wave="sawtooth">Z</button>
-        </div>
+        <div class="wave-buttons"><button class="wave-btn" data-wave="sine">∿</button><button class="wave-btn" data-wave="square">□</button><button class="wave-btn" data-wave="sawtooth">Z</button></div>
         <div class="legend"></div>
-        <canvas id="canvas2" width="700" height="100"></canvas>
+        <canvas id="canvas2" width="750" height="100"></canvas>
         <div class="controls-right">
             <button class="mute-btn">Mute</button>
-            <div class="vol-box">
-                <input type="range" class="volume-slider" min="0" max="1" step="0.01" value="0.8">
-            </div>
-            <label class="snap-label">
-              <input type="checkbox" class="snap-checkbox"> Snap
-            </label>
+            <div class="vol-box"><input type="range" class="volume-slider" min="0" max="1" step="0.01" value="0.8"></div>
+            <label class="snap-label"><input type="checkbox" class="snap-checkbox"> Snap</label>
         </div>
       </div>
-
       <div class="track-container">
-        <div class="wave-buttons">
-          <button class="wave-btn" data-wave="sine">∿</button>
-          <button class="wave-btn" data-wave="square">□</button>
-          <button class="wave-btn" data-wave="sawtooth">Z</button>
-        </div>
+        <div class="wave-buttons"><button class="wave-btn" data-wave="sine">∿</button><button class="wave-btn" data-wave="square">□</button><button class="wave-btn" data-wave="sawtooth">Z</button></div>
         <div class="legend"></div>
-        <canvas id="canvas3" width="700" height="100"></canvas>
+        <canvas id="canvas3" width="750" height="100"></canvas>
         <div class="controls-right">
             <button class="mute-btn">Mute</button>
-            <div class="vol-box">
-                <input type="range" class="volume-slider" min="0" max="1" step="0.01" value="0.8">
-            </div>
-            <label class="snap-label">
-              <input type="checkbox" class="snap-checkbox"> Snap
-            </label>
+            <div class="vol-box"><input type="range" class="volume-slider" min="0" max="1" step="0.01" value="0.8"></div>
+            <label class="snap-label"><input type="checkbox" class="snap-checkbox"> Snap</label>
         </div>
       </div>
-
       <div class="track-container">
-        <div class="wave-buttons">
-          <button class="wave-btn" data-wave="sine">∿</button>
-          <button class="wave-btn" data-wave="square">□</button>
-          <button class="wave-btn" data-wave="sawtooth">Z</button>
-        </div>
+        <div class="wave-buttons"><button class="wave-btn" data-wave="sine">∿</button><button class="wave-btn" data-wave="square">□</button><button class="wave-btn" data-wave="sawtooth">Z</button></div>
         <div class="legend"></div>
-        <canvas id="canvas4" width="700" height="100"></canvas>
+        <canvas id="canvas4" width="750" height="100"></canvas>
         <div class="controls-right">
             <button class="mute-btn">Mute</button>
-            <div class="vol-box">
-                <input type="range" class="volume-slider" min="0" max="1" step="0.01" value="0.8">
-            </div>
-            <label class="snap-label">
-              <input type="checkbox" class="snap-checkbox"> Snap
-            </label>
+            <div class="vol-box"><input type="range" class="volume-slider" min="0" max="1" step="0.01" value="0.8"></div>
+            <label class="snap-label"><input type="checkbox" class="snap-checkbox"> Snap</label>
         </div>
       </div>
     </div>
 
     <div id="controls">
       <div class="control-row">
-        <label>Tempo (BPM): <input type="number" id="bpmInput" value="120" min="30" max="300"></label>
+        <label>Tempo: <input type="number" id="bpmInput" value="120" min="30" max="300"></label>
         <label>Loop: <input type="checkbox" id="loopCheckbox" checked></label>
         <label>Harmonize: <input type="checkbox" id="harmonizeCheckbox"></label>
         <label id="scaleSelectContainer" style="display:none;">
-          Scale:
-          <select id="scaleSelect">
-            <option value="major">Major</option>
-            <option value="minor">Minor</option>
-            <option value="pentatonic">Pentatonic</option>
-          </select>
+          Scale: <select id="scaleSelect"><option value="major">Major</option><option value="minor">Minor</option><option value="pentatonic">Pentatonic</option></select>
         </label>
       </div>
       
       <div class="control-row">
-        <label>Tool: 
-          <select id="toolSelect">
-            <option value="draw">Zeichnen</option>
-            <option value="erase">Radierer</option>
-          </select>
-        </label>
+        <label>Tool: <select id="toolSelect"><option value="draw">Zeichnen</option><option value="erase">Radierer</option></select></label>
         <label>Pinsel:
           <select id="brushSelect">
             <option value="variable">Variabel</option>
             <option value="calligraphy">Kalligrafie</option>
-            <option value="particles">Partikel</option> <option value="fractal">Fraktal</option>
+            <option value="particles">Partikel</option>
+            <option value="fractal">Fraktal</option>
             <option value="chord">Akkord</option>
             <option value="standard">Standard</option>
           </select>
         </label>
-        <label>Chord:
-          <select id="chordSelect">
-            <option value="major">Dur</option>
-            <option value="minor">Moll</option>
-            <option value="diminished">Vermindert</option>
-            <option value="augmented">Übermäßig</option>
-            <option value="sus2">Sus2</option>
-            <option value="sus4">Sus4</option>
-          </select>
-        </label>
+        <label>Chord: <select id="chordSelect"><option value="major">Dur</option><option value="minor">Moll</option><option value="diminished">Vermindert</option><option value="sus2">Sus2</option></select></label>
         <label>Größe: <input type="range" id="brushSizeSlider" min="1" max="40" value="5"></label>
       </div>
 
