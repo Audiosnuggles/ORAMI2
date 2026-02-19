@@ -23,4 +23,12 @@ button:hover { background: #d0d0d0; }
 input[type="number"] { width: 50px; }
 
 /* TAUBE FIX: Z-Index sehr hoch */
-#pigeon { position: fixed; bottom: 20px; right: 20px; width: 80px; z-index: 99999; opacity: 0.8; pointer-events: none; }
+#pigeon {
+  position: absolute; /* Orientiert sich jetzt am #main Container */
+  top: 15px;          /* Abstand von oben */
+  right: 20px;        /* Abstand von rechts */
+  width: 60px;        /* Etwas kleiner, damit sie nicht die Controls verdeckt */
+  opacity: 0.8;
+  pointer-events: none;
+  z-index: 100;
+}

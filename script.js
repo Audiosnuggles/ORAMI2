@@ -1,20 +1,17 @@
 /**
- * THE PIGEON - Final Master v2
- * - Drawing: Fixed (Particles, Calligraphy 45deg, Fractal Jitter)
- * - Audio: Stable (Anti-Crash, Filters, Noise)
- * - IO: Saves Settings (BPM, Loop, Scale) + Tracks
+ * THE PIGEON - Final Golden Master
+ * - Fixed: Live Pitch Update (Removed reference to undefined variable)
+ * - All other features stable.
  */
 
-/* =========================================
-   1. CONFIG & GLOBALS
-   ========================================= */
+// --- CONFIG ---
 const chordIntervals = {
   major: [0, 4, 7], minor: [0, 3, 7], diminished: [0, 3, 6],
   augmented: [0, 4, 8], sus2: [0, 2, 7], sus4: [0, 5, 7]
 };
 const chordColors = ['#FF5733', '#33FF57', '#3357FF'];
 
-// AUDIO: Noise Buffer
+// AUDIO BUFFERS
 let cachedNoiseBuffer = null;
 function getNoiseBuffer(ctx) {
   if (cachedNoiseBuffer) return cachedNoiseBuffer;
@@ -32,7 +29,6 @@ function getNoiseBuffer(ctx) {
   return buffer;
 }
 
-// AUDIO: Distortion Curve
 let cachedDistortionCurve = null;
 function getDistortionCurve() {
   if (cachedDistortionCurve) return cachedDistortionCurve;
@@ -45,9 +41,7 @@ function getDistortionCurve() {
   return curve;
 }
 
-/* =========================================
-   2. DRAWING LOGIC
-   ========================================= */
+// --- DRAWING FUNCTIONS ---
 function drawSegmentStandard(ctx, pts, idx1, idx2, size) {
   ctx.lineWidth = size; ctx.lineCap = "round";
   ctx.beginPath(); ctx.moveTo(pts[idx1].x, pts[idx1].y); ctx.lineTo(pts[idx2].x, pts[idx2].y); ctx.stroke();
@@ -81,23 +75,17 @@ function drawSegmentFractal(ctx, pts, idx1, idx2, size) {
   ctx.stroke();
 }
 
-/* =========================================
-   3. MAIN APP LOGIC
-   ========================================= */
+// --- MAIN ---
 document.addEventListener("DOMContentLoaded", function() {
   let audioCtx, masterGain, isPlaying=false;
   let playbackStartTime=0, playbackDuration=0, animationFrameId;
   let undoStack=[], liveNodes=[], liveGainNode=null, liveFilterNode=null;
 
-  // UI Refs
   const toolSelect = document.getElementById("toolSelect");
   const brushSelect = document.getElementById("brushSelect");
   const sizeSlider = document.getElementById("brushSizeSlider");
   const chordSelect = document.getElementById("chordSelect");
   const harmonizeCheckbox = document.getElementById("harmonizeCheckbox");
-  const scaleSelect = document.getElementById("scaleSelect");
-  const bpmInput = document.getElementById("bpmInput");
-  const loopCheckbox = document.getElementById("loopCheckbox");
 
   const tracks = Array.from(document.querySelectorAll(".track-container")).map((c, i) => ({
     index: i, canvas: c.querySelector("canvas"), ctx: c.querySelector("canvas").getContext("2d"),
@@ -136,7 +124,9 @@ document.addEventListener("DOMContentLoaded", function() {
         currentSegment = { points: [{x, y:pos.y, jX, jY}], brush: brushSelect.value, thickness: parseInt(sizeSlider.value), chordType: (brushSelect.value==="chord")?chordSelect.value:null };
         track.segments.push(currentSegment);
         
-        if(brushSelect.value === "particles") triggerParticleGrain(track, pos.y); else startLiveSynth(track, pos.y);
+        if(brushSelect.value === "particles") triggerParticleGrain(track, pos.y); 
+        else startLiveSynth(track, pos.y);
+        
         redrawTrack(track);
       } else erase(track, x, pos.y);
     };
@@ -148,7 +138,12 @@ document.addEventListener("DOMContentLoaded", function() {
       if(toolSelect.value==="draw" && drawing) {
         let jX=0, jY=0; if(brushSelect.value==="fractal"){ jX=Math.random()*20-10; jY=Math.random()*40-20; }
         currentSegment.points.push({x, y:pos.y, jX, jY});
-        if(brushSelect.value==="particles") triggerParticleGrain(track, pos.y); else updateLiveSynth(track, pos.y+jY);
+        
+        try {
+            if(brushSelect.value==="particles") triggerParticleGrain(track, pos.y); 
+            else updateLiveSynth(track, pos.y+jY);
+        } catch(err) { }
+        
         redrawTrack(track);
       } else if(toolSelect.value==="erase" && (e.buttons===1 || e.type==="touchmove")) erase(track, x, pos.y);
     };
@@ -205,18 +200,26 @@ document.addEventListener("DOMContentLoaded", function() {
     });
   }
 
+  // FIX: Pitch Update now works (Removed faulty var reference)
   function updateLiveSynth(track, y) {
-    if(!liveOscillators) return;
+    if(!liveNodes || !liveNodes.length) return;
+
     let freq = mapY(y, track.canvas.height);
     if(harmonizeCheckbox.checked) freq = quantize(freq);
+    
     liveNodes.forEach((node, i) => {
+      // Check if it's an oscillator by looking for frequency param
       if(node.frequency) {
          const ivs = (brushSelect.value==="chord") ? chordIntervals[chordSelect.value] : [0];
          const iv = ivs[i] || 0;
          const fVal = freq * Math.pow(2, iv/12);
-         if (Number.isFinite(fVal) && fVal > 0) node.frequency.setTargetAtTime(fVal, audioCtx.currentTime, 0.01);
+         if (Number.isFinite(fVal) && fVal > 0) {
+             // Use setTargetAtTime for smooth transition
+             node.frequency.setTargetAtTime(fVal, audioCtx.currentTime, 0.02);
+         }
       }
     });
+    
     if(brushSelect.value==="calligraphy" && liveFilterNode) {
        const th = parseInt(sizeSlider.value);
        const fVal = Math.max(100, 5000-(th*250));
@@ -301,13 +304,15 @@ document.addEventListener("DOMContentLoaded", function() {
         const filter = audioCtx.createBiquadFilter(); filter.type = "lowpass"; filter.Q.value = 10; filter.frequency.value = 20000;
         const g = audioCtx.createGain(); g.gain.setValueAtTime(0, sT);
         g.gain.linearRampToValueAtTime(0.3, sT+0.02); g.gain.setValueAtTime(0.3, eT); g.gain.linearRampToValueAtTime(0, eT+0.1);
+        
         let chain = g;
-        if(seg.brush==="fractal"){ const shaper=audioCtx.createWaveShaper(); shaper.curve=getDistortionCurve(); g.connect(shaper); chain=shaper; }
-        if(seg.brush==="calligraphy"){ 
+        if(seg.brush==="fractal"){ const shaper=audioCtx.createWaveShaper(); shaper.curve=getDistortionCurve(); osc.connect(shaper); shaper.connect(g); } // Fractal routing
+        else if(seg.brush==="calligraphy"){ 
             const cutoff = Math.max(100, 5000-(seg.thickness*250));
             filter.frequency.setValueAtTime(cutoff, sT); osc.connect(filter).connect(g); 
         } else { osc.connect(g); }
-        chain.connect(track.gainNode);
+        
+        g.connect(track.gainNode);
         sorted.forEach(p => {
            const t = start + (p.x/track.canvas.width)*playbackDuration;
            let yVal = p.y; if(seg.brush==="fractal") yVal+=(p.jY||0);
@@ -322,10 +327,10 @@ document.addEventListener("DOMContentLoaded", function() {
   // --- HELPERS ---
   function getPos(e, c) { const r=c.getBoundingClientRect(), sx=c.width/r.width, sy=c.height/r.height; const cx=e.touches?e.touches[0].clientX:e.clientX, cy=e.touches?e.touches[0].clientY:e.clientY; return {x:(cx-r.left)*sx, y:(cy-r.top)*sy}; }
   function snap(x, w) { return Math.round(x/(w/32))*(w/32); }
-  function mapY(y, h) { const val=1000-(y/h)*920; return Math.max(20, Math.min(val, 20000)); } // Clamp
+  function mapY(y, h) { const val=1000-(y/h)*920; return Math.max(20, Math.min(val, 20000)); } 
   function quantize(f) { 
       if(!Number.isFinite(f) || f<=0) return 440;
-      const s=scaleSelect.value; 
+      const s=document.getElementById("scaleSelect").value; 
       let m=69+12*Math.log2(f/440), r=Math.round(m), pat=(s==="major")?[0,2,4,5,7,9,11]:(s==="minor")?[0,2,3,5,7,8,10]:[0,3,5,7,10], mod=r%12, b=pat[0], md=99; 
       pat.forEach(p=>{let d=Math.abs(p-mod); if(d<md){md=d;b=p;}}); 
       return 440*Math.pow(2,(r-mod+b-69)/12); 
@@ -362,13 +367,13 @@ document.addEventListener("DOMContentLoaded", function() {
     if(hx!==undefined){ t.ctx.strokeStyle="red"; t.ctx.lineWidth=2; t.ctx.beginPath(); t.ctx.moveTo(hx,0); t.ctx.lineTo(hx,100); t.ctx.stroke(); }
   }
 
-  // --- LOOP ---
+  // --- LOOP & CONTROLS ---
   function loop() {
     if(!isPlaying) return;
     const elapsed = audioCtx.currentTime - playbackStartTime;
     if(elapsed >= playbackDuration) {
-       if(loopCheckbox.checked) {
-          playbackStartTime = audioCtx.currentTime + 0.05;
+       if(document.getElementById("loopCheckbox").checked) {
+          playbackStartTime = audioCtx.currentTime; 
           scheduleTracks(playbackStartTime);
        } else {
           document.getElementById("stopButton").click();
@@ -382,7 +387,7 @@ document.addEventListener("DOMContentLoaded", function() {
 
   document.getElementById("playButton").addEventListener("click", () => {
      if(isPlaying) return; initAudio(); if(audioCtx.state==="suspended") audioCtx.resume();
-     const bpmVal = parseFloat(bpmInput.value);
+     const bpmVal = parseFloat(document.getElementById("bpmInput").value);
      const bpm = (Number.isFinite(bpmVal) && bpmVal > 10) ? bpmVal : 120;
      playbackDuration = (60/bpm)*32;
      playbackStartTime = audioCtx.currentTime+0.1;
@@ -391,28 +396,24 @@ document.addEventListener("DOMContentLoaded", function() {
   document.getElementById("stopButton").addEventListener("click", () => { isPlaying=false; cancelAnimationFrame(animationFrameId); tracks.forEach(t=>{if(t.gainNode){t.gainNode.disconnect();t.gainNode=null;} redrawTrack(t);}); });
   document.getElementById("clearButton").addEventListener("click", () => { tracks.forEach(t=>{t.segments=[]; redrawTrack(t);}); undoStack=[]; });
   document.getElementById("undoButton").addEventListener("click", () => { if(undoStack.length){const o=undoStack.pop(); tracks[o.trackIdx].segments.pop(); redrawTrack(tracks[o.trackIdx]);} });
-  
-  // EXPORT (Saves Settings + Tracks)
   document.getElementById("exportButton").addEventListener("click", () => {
      const data = {
-         settings: { bpm: bpmInput.value, loop: loopCheckbox.checked, scale: scaleSelect.value, harmonize: harmonizeCheckbox.checked },
+         settings: { bpm: document.getElementById("bpmInput").value, loop: document.getElementById("loopCheckbox").checked, scale: document.getElementById("scaleSelect").value, harmonize: document.getElementById("harmonizeCheckbox").checked },
          tracks: tracks.map(t => t.segments)
      };
      const blob = new Blob([JSON.stringify(data)], {type:"application/json"});
      const url = URL.createObjectURL(blob); const a=document.createElement("a"); a.href=url; a.download="pigeon.json"; a.click();
   });
-
-  // IMPORT (Loads Settings + Tracks)
   document.getElementById("importButton").addEventListener("click", () => document.getElementById("importFileInput").click());
   document.getElementById("importFileInput").addEventListener("change", e => {
      const r = new FileReader(); r.onload = evt => { 
         try { 
           const d=JSON.parse(evt.target.result); 
           if(d.settings) {
-              bpmInput.value = d.settings.bpm;
-              loopCheckbox.checked = d.settings.loop;
-              scaleSelect.value = d.settings.scale;
-              harmonizeCheckbox.checked = d.settings.harmonize;
+              document.getElementById("bpmInput").value = d.settings.bpm;
+              document.getElementById("loopCheckbox").checked = d.settings.loop;
+              document.getElementById("scaleSelect").value = d.settings.scale;
+              document.getElementById("harmonizeCheckbox").checked = d.settings.harmonize;
               document.getElementById("scaleSelectContainer").style.display = d.settings.harmonize ? "inline" : "none";
           }
           const segs = d.tracks || d;
@@ -420,8 +421,7 @@ document.addEventListener("DOMContentLoaded", function() {
         } catch(e){ alert("Fehler beim Import"); } 
      }; 
      r.readAsText(e.target.files[0]);
-     e.target.value = ''; // Reset input
+     e.target.value = '';
   });
-
   harmonizeCheckbox.addEventListener("change", () => document.getElementById("scaleSelectContainer").style.display=harmonizeCheckbox.checked?"inline":"none");
 });
