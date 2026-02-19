@@ -8,6 +8,8 @@
 </head>
 <body>
   <div id="main">
+    <img id="pigeon" src="pigeon.svg" alt="Pigeon">
+    
     <h1>The Pigeon</h1>
     
     <div id="tracks">
@@ -54,44 +56,76 @@
     </div>
 
     <div id="controls">
-      <div class="control-row">
-        <label>Tempo: <input type="number" id="bpmInput" value="120" min="30" max="300"></label>
-        <label>Loop: <input type="checkbox" id="loopCheckbox" checked></label>
-        <label>Harmonize: <input type="checkbox" id="harmonizeCheckbox"></label>
-        <label id="scaleSelectContainer" style="display:none;">
-          Scale: <select id="scaleSelect"><option value="major">Major</option><option value="minor">Minor</option><option value="pentatonic">Pentatonic</option></select>
-        </label>
-      </div>
       
-      <div class="control-row">
-        <label>Tool: <select id="toolSelect"><option value="draw">Zeichnen</option><option value="erase">Radierer</option></select></label>
-        <label>Pinsel:
-          <select id="brushSelect">
-            <option value="variable">Variabel</option>
-            <option value="calligraphy">Kalligrafie</option>
-            <option value="particles">Partikel</option>
-            <option value="fractal">Fraktal</option>
-            <option value="chord">Akkord</option>
-            <option value="standard">Standard</option>
-          </select>
-        </label>
-        <label>Chord: <select id="chordSelect"><option value="major">Dur</option><option value="minor">Moll</option><option value="diminished">Vermindert</option><option value="sus2">Sus2</option></select></label>
-        <label>Größe: <input type="range" id="brushSizeSlider" min="1" max="40" value="5"></label>
+      <div class="controls-left">
+        <div class="control-row">
+          <label>Tempo: <input type="number" id="bpmInput" value="120" min="30" max="300"></label>
+          <label>Loop: <input type="checkbox" id="loopCheckbox" checked></label>
+          <label>Harmonize: <input type="checkbox" id="harmonizeCheckbox"></label>
+          <label id="scaleSelectContainer" style="display:none;">
+            Scale: <select id="scaleSelect"><option value="major">Major</option><option value="minor">Minor</option><option value="pentatonic">Pentatonic</option></select>
+          </label>
+        </div>
+        
+        <div class="control-row">
+          <label>Tool: <select id="toolSelect"><option value="draw">Zeichnen</option><option value="erase">Radierer</option></select></label>
+          <label>Pinsel:
+            <select id="brushSelect">
+              <option value="variable">Variabel</option>
+              <option value="calligraphy">Kalligrafie</option>
+              <option value="particles">Partikel</option>
+              <option value="fractal">Fraktal</option>
+              <option value="chord">Akkord</option>
+              <option value="standard">Standard</option>
+            </select>
+          </label>
+          <label>Chord: <select id="chordSelect"><option value="major">Dur</option><option value="minor">Moll</option><option value="diminished">Vermindert</option><option value="augmented">Übermäßig</option><option value="sus2">Sus2</option></select></label>
+          <label>Größe: <input type="range" id="brushSizeSlider" min="1" max="40" value="5"></label>
+        </div>
+
+        <div class="control-row">
+          <button id="playButton">Play</button>
+          <button id="stopButton">Stop</button>
+          <button id="clearButton">Clear</button>
+          <button id="undoButton">Undo</button>
+          <button id="exportButton">Export Set</button>
+          <button id="importButton">Import Set</button>
+          <button id="exportWavButton">Export WAV</button>
+          <input type="file" id="importFileInput" style="display:none;">
+        </div>
       </div>
 
-      <div class="control-row">
-        <button id="playButton">Play</button>
-        <button id="stopButton">Stop</button>
-        <button id="clearButton">Clear</button>
-        <button id="undoButton">Undo</button>
-        <button id="exportButton">Export</button>
-        <button id="importButton">Import</button>
-        <input type="file" id="importFileInput" style="display:none;">
+      <div id="pattern-machine">
+        <div class="machine-header">
+          <span>PATTERN BANK</span>
+          <button id="saveModeBtn">⏺ SAVE</button>
+        </div>
+        <div class="bank-row">
+          <span class="bank-label">A</span>
+          <button class="pad" data-bank="A" data-idx="0"></button>
+          <button class="pad" data-bank="A" data-idx="1"></button>
+          <button class="pad" data-bank="A" data-idx="2"></button>
+          <button class="pad" data-bank="A" data-idx="3"></button>
+        </div>
+        <div class="bank-row">
+          <span class="bank-label">B</span>
+          <button class="pad" data-bank="B" data-idx="0"></button>
+          <button class="pad" data-bank="B" data-idx="1"></button>
+          <button class="pad" data-bank="B" data-idx="2"></button>
+          <button class="pad" data-bank="B" data-idx="3"></button>
+        </div>
+        <div class="bank-row">
+          <span class="bank-label">C</span>
+          <button class="pad" data-bank="C" data-idx="0"></button>
+          <button class="pad" data-bank="C" data-idx="1"></button>
+          <button class="pad" data-bank="C" data-idx="2"></button>
+          <button class="pad" data-bank="C" data-idx="3"></button>
+        </div>
       </div>
+      
     </div>
   </div>
   
-  <img id="pigeon" src="pigeon.svg" alt="pigeon">
   <script src="script.js"></script>
 </body>
 </html>
