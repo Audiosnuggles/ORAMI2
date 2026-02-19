@@ -1,18 +1,20 @@
 /**
- * THE PIGEON - Final Master (Sync Fix)
- * - Fixed: Progress Bar Sync (Dynamic Width)
- * - Fixed: Loop Timing
- * - All other features (Particles, Filter, Fractal) preserved.
+ * THE PIGEON - Final Master v2
+ * - Drawing: Fixed (Particles, Calligraphy 45deg, Fractal Jitter)
+ * - Audio: Stable (Anti-Crash, Filters, Noise)
+ * - IO: Saves Settings (BPM, Loop, Scale) + Tracks
  */
 
-// --- CONFIG ---
+/* =========================================
+   1. CONFIG & GLOBALS
+   ========================================= */
 const chordIntervals = {
   major: [0, 4, 7], minor: [0, 3, 7], diminished: [0, 3, 6],
   augmented: [0, 4, 8], sus2: [0, 2, 7], sus4: [0, 5, 7]
 };
 const chordColors = ['#FF5733', '#33FF57', '#3357FF'];
 
-// AUDIO HELPERS
+// AUDIO: Noise Buffer
 let cachedNoiseBuffer = null;
 function getNoiseBuffer(ctx) {
   if (cachedNoiseBuffer) return cachedNoiseBuffer;
@@ -30,6 +32,7 @@ function getNoiseBuffer(ctx) {
   return buffer;
 }
 
+// AUDIO: Distortion Curve
 let cachedDistortionCurve = null;
 function getDistortionCurve() {
   if (cachedDistortionCurve) return cachedDistortionCurve;
@@ -42,7 +45,9 @@ function getDistortionCurve() {
   return curve;
 }
 
-// --- DRAWING ---
+/* =========================================
+   2. DRAWING LOGIC
+   ========================================= */
 function drawSegmentStandard(ctx, pts, idx1, idx2, size) {
   ctx.lineWidth = size; ctx.lineCap = "round";
   ctx.beginPath(); ctx.moveTo(pts[idx1].x, pts[idx1].y); ctx.lineTo(pts[idx2].x, pts[idx2].y); ctx.stroke();
@@ -76,17 +81,23 @@ function drawSegmentFractal(ctx, pts, idx1, idx2, size) {
   ctx.stroke();
 }
 
-// --- MAIN ---
+/* =========================================
+   3. MAIN APP LOGIC
+   ========================================= */
 document.addEventListener("DOMContentLoaded", function() {
   let audioCtx, masterGain, isPlaying=false;
   let playbackStartTime=0, playbackDuration=0, animationFrameId;
   let undoStack=[], liveNodes=[], liveGainNode=null, liveFilterNode=null;
 
+  // UI Refs
   const toolSelect = document.getElementById("toolSelect");
   const brushSelect = document.getElementById("brushSelect");
   const sizeSlider = document.getElementById("brushSizeSlider");
   const chordSelect = document.getElementById("chordSelect");
   const harmonizeCheckbox = document.getElementById("harmonizeCheckbox");
+  const scaleSelect = document.getElementById("scaleSelect");
+  const bpmInput = document.getElementById("bpmInput");
+  const loopCheckbox = document.getElementById("loopCheckbox");
 
   const tracks = Array.from(document.querySelectorAll(".track-container")).map((c, i) => ({
     index: i, canvas: c.querySelector("canvas"), ctx: c.querySelector("canvas").getContext("2d"),
@@ -203,13 +214,13 @@ document.addEventListener("DOMContentLoaded", function() {
          const ivs = (brushSelect.value==="chord") ? chordIntervals[chordSelect.value] : [0];
          const iv = ivs[i] || 0;
          const fVal = freq * Math.pow(2, iv/12);
-         if(Number.isFinite(fVal) && fVal > 0) node.frequency.setTargetAtTime(fVal, audioCtx.currentTime, 0.01);
+         if (Number.isFinite(fVal) && fVal > 0) node.frequency.setTargetAtTime(fVal, audioCtx.currentTime, 0.01);
       }
     });
     if(brushSelect.value==="calligraphy" && liveFilterNode) {
        const th = parseInt(sizeSlider.value);
        const fVal = Math.max(100, 5000-(th*250));
-       if(Number.isFinite(fVal)) liveFilterNode.frequency.setTargetAtTime(fVal, audioCtx.currentTime, 0.05);
+       if (Number.isFinite(fVal)) liveFilterNode.frequency.setTargetAtTime(fVal, audioCtx.currentTime, 0.05);
     }
   }
 
@@ -314,7 +325,7 @@ document.addEventListener("DOMContentLoaded", function() {
   function mapY(y, h) { const val=1000-(y/h)*920; return Math.max(20, Math.min(val, 20000)); } // Clamp
   function quantize(f) { 
       if(!Number.isFinite(f) || f<=0) return 440;
-      const s=document.getElementById("scaleSelect").value; 
+      const s=scaleSelect.value; 
       let m=69+12*Math.log2(f/440), r=Math.round(m), pat=(s==="major")?[0,2,4,5,7,9,11]:(s==="minor")?[0,2,3,5,7,8,10]:[0,3,5,7,10], mod=r%12, b=pat[0], md=99; 
       pat.forEach(p=>{let d=Math.abs(p-mod); if(d<md){md=d;b=p;}}); 
       return 440*Math.pow(2,(r-mod+b-69)/12); 
@@ -355,26 +366,24 @@ document.addEventListener("DOMContentLoaded", function() {
   function loop() {
     if(!isPlaying) return;
     const elapsed = audioCtx.currentTime - playbackStartTime;
-    // LOOP SYNC FIX:
     if(elapsed >= playbackDuration) {
-       if(document.getElementById("loopCheckbox").checked) {
-          playbackStartTime = audioCtx.currentTime; // No added delay for sync
+       if(loopCheckbox.checked) {
+          playbackStartTime = audioCtx.currentTime + 0.05;
           scheduleTracks(playbackStartTime);
        } else {
           document.getElementById("stopButton").click();
           return;
        }
     }
-    // DYNAMIC WIDTH:
-    const w = tracks[0].canvas.width;
-    const x = (elapsed/playbackDuration) * w;
-    tracks.forEach(t => redrawTrack(t, x % w));
+    const x = (elapsed/playbackDuration) * 750;
+    tracks.forEach(t => redrawTrack(t, x));
     animationFrameId = requestAnimationFrame(loop);
   }
 
   document.getElementById("playButton").addEventListener("click", () => {
      if(isPlaying) return; initAudio(); if(audioCtx.state==="suspended") audioCtx.resume();
-     const bpm = parseFloat(document.getElementById("bpmInput").value);
+     const bpmVal = parseFloat(bpmInput.value);
+     const bpm = (Number.isFinite(bpmVal) && bpmVal > 10) ? bpmVal : 120;
      playbackDuration = (60/bpm)*32;
      playbackStartTime = audioCtx.currentTime+0.1;
      isPlaying=true; scheduleTracks(playbackStartTime); requestAnimationFrame(loop);
@@ -382,13 +391,37 @@ document.addEventListener("DOMContentLoaded", function() {
   document.getElementById("stopButton").addEventListener("click", () => { isPlaying=false; cancelAnimationFrame(animationFrameId); tracks.forEach(t=>{if(t.gainNode){t.gainNode.disconnect();t.gainNode=null;} redrawTrack(t);}); });
   document.getElementById("clearButton").addEventListener("click", () => { tracks.forEach(t=>{t.segments=[]; redrawTrack(t);}); undoStack=[]; });
   document.getElementById("undoButton").addEventListener("click", () => { if(undoStack.length){const o=undoStack.pop(); tracks[o.trackIdx].segments.pop(); redrawTrack(tracks[o.trackIdx]);} });
+  
+  // EXPORT (Saves Settings + Tracks)
   document.getElementById("exportButton").addEventListener("click", () => {
-     const blob = new Blob([JSON.stringify({tracks:tracks.map(t=>t.segments)})], {type:"application/json"});
+     const data = {
+         settings: { bpm: bpmInput.value, loop: loopCheckbox.checked, scale: scaleSelect.value, harmonize: harmonizeCheckbox.checked },
+         tracks: tracks.map(t => t.segments)
+     };
+     const blob = new Blob([JSON.stringify(data)], {type:"application/json"});
      const url = URL.createObjectURL(blob); const a=document.createElement("a"); a.href=url; a.download="pigeon.json"; a.click();
   });
+
+  // IMPORT (Loads Settings + Tracks)
   document.getElementById("importButton").addEventListener("click", () => document.getElementById("importFileInput").click());
   document.getElementById("importFileInput").addEventListener("change", e => {
-     const r = new FileReader(); r.onload = evt => { try { const d=JSON.parse(evt.target.result); (d.tracks||d).forEach((s,i)=>{if(tracks[i])tracks[i].segments=s;redrawTrack(tracks[i]);}); }catch(e){} }; r.readAsText(e.target.files[0]);
+     const r = new FileReader(); r.onload = evt => { 
+        try { 
+          const d=JSON.parse(evt.target.result); 
+          if(d.settings) {
+              bpmInput.value = d.settings.bpm;
+              loopCheckbox.checked = d.settings.loop;
+              scaleSelect.value = d.settings.scale;
+              harmonizeCheckbox.checked = d.settings.harmonize;
+              document.getElementById("scaleSelectContainer").style.display = d.settings.harmonize ? "inline" : "none";
+          }
+          const segs = d.tracks || d;
+          if(Array.isArray(segs)) segs.forEach((s,i)=>{if(tracks[i])tracks[i].segments=s;redrawTrack(tracks[i]);});
+        } catch(e){ alert("Fehler beim Import"); } 
+     }; 
+     r.readAsText(e.target.files[0]);
+     e.target.value = ''; // Reset input
   });
+
   harmonizeCheckbox.addEventListener("change", () => document.getElementById("scaleSelectContainer").style.display=harmonizeCheckbox.checked?"inline":"none");
 });
