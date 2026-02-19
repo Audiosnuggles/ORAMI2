@@ -1,10 +1,11 @@
 /**
- * THE PIGEON - Final Golden Master
- * - Fixed: Live Pitch Update (Removed reference to undefined variable)
- * - All other features stable.
+ * THE PIGEON - Final Master v4 (Audio Reactive Visuals)
+ * - Taube reagiert auf Frequenzen (Glitch) und Volume (Pump)
  */
 
-// --- CONFIG ---
+/* =========================================
+   1. CONFIG & GLOBALS
+   ========================================= */
 const chordIntervals = {
   major: [0, 4, 7], minor: [0, 3, 7], diminished: [0, 3, 6],
   augmented: [0, 4, 8], sus2: [0, 2, 7], sus4: [0, 5, 7]
@@ -41,7 +42,7 @@ function getDistortionCurve() {
   return curve;
 }
 
-// --- DRAWING FUNCTIONS ---
+// --- DRAWING ---
 function drawSegmentStandard(ctx, pts, idx1, idx2, size) {
   ctx.lineWidth = size; ctx.lineCap = "round";
   ctx.beginPath(); ctx.moveTo(pts[idx1].x, pts[idx1].y); ctx.lineTo(pts[idx2].x, pts[idx2].y); ctx.stroke();
@@ -77,15 +78,19 @@ function drawSegmentFractal(ctx, pts, idx1, idx2, size) {
 
 // --- MAIN ---
 document.addEventListener("DOMContentLoaded", function() {
-  let audioCtx, masterGain, isPlaying=false;
+  let audioCtx, masterGain, analyser, isPlaying=false;
   let playbackStartTime=0, playbackDuration=0, animationFrameId;
   let undoStack=[], liveNodes=[], liveGainNode=null, liveFilterNode=null;
+  
+  // Analyse-Array für Visuals
+  let dataArray;
 
   const toolSelect = document.getElementById("toolSelect");
   const brushSelect = document.getElementById("brushSelect");
   const sizeSlider = document.getElementById("brushSizeSlider");
   const chordSelect = document.getElementById("chordSelect");
   const harmonizeCheckbox = document.getElementById("harmonizeCheckbox");
+  const pigeonImg = document.getElementById("pigeon");
 
   const tracks = Array.from(document.querySelectorAll(".track-container")).map((c, i) => ({
     index: i, canvas: c.querySelector("canvas"), ctx: c.querySelector("canvas").getContext("2d"),
@@ -124,9 +129,7 @@ document.addEventListener("DOMContentLoaded", function() {
         currentSegment = { points: [{x, y:pos.y, jX, jY}], brush: brushSelect.value, thickness: parseInt(sizeSlider.value), chordType: (brushSelect.value==="chord")?chordSelect.value:null };
         track.segments.push(currentSegment);
         
-        if(brushSelect.value === "particles") triggerParticleGrain(track, pos.y); 
-        else startLiveSynth(track, pos.y);
-        
+        if(brushSelect.value === "particles") triggerParticleGrain(track, pos.y); else startLiveSynth(track, pos.y);
         redrawTrack(track);
       } else erase(track, x, pos.y);
     };
@@ -157,13 +160,20 @@ document.addEventListener("DOMContentLoaded", function() {
     track.canvas.addEventListener("touchend", end);
   });
 
-  // --- AUDIO ---
+  // --- AUDIO INIT ---
   function initAudio() {
     if(audioCtx) return;
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     masterGain = audioCtx.createGain(); masterGain.gain.value = 0.5;
+    
+    // ANALYSER FÜR VISUALS
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 64; // Kleine Auflösung reicht für Animation
+    dataArray = new Uint8Array(analyser.frequencyBinCount);
+
     const comp = audioCtx.createDynamicsCompressor();
-    masterGain.connect(comp).connect(audioCtx.destination);
+    // Chain: Master -> Compressor -> Analyser -> Output
+    masterGain.connect(comp).connect(analyser).connect(audioCtx.destination);
   }
 
   function startLiveSynth(track, y) {
@@ -200,26 +210,18 @@ document.addEventListener("DOMContentLoaded", function() {
     });
   }
 
-  // FIX: Pitch Update now works (Removed faulty var reference)
   function updateLiveSynth(track, y) {
     if(!liveNodes || !liveNodes.length) return;
-
     let freq = mapY(y, track.canvas.height);
     if(harmonizeCheckbox.checked) freq = quantize(freq);
-    
     liveNodes.forEach((node, i) => {
-      // Check if it's an oscillator by looking for frequency param
       if(node.frequency) {
          const ivs = (brushSelect.value==="chord") ? chordIntervals[chordSelect.value] : [0];
          const iv = ivs[i] || 0;
          const fVal = freq * Math.pow(2, iv/12);
-         if (Number.isFinite(fVal) && fVal > 0) {
-             // Use setTargetAtTime for smooth transition
-             node.frequency.setTargetAtTime(fVal, audioCtx.currentTime, 0.02);
-         }
+         if (Number.isFinite(fVal) && fVal > 0) node.frequency.setTargetAtTime(fVal, audioCtx.currentTime, 0.02);
       }
     });
-    
     if(brushSelect.value==="calligraphy" && liveFilterNode) {
        const th = parseInt(sizeSlider.value);
        const fVal = Math.max(100, 5000-(th*250));
@@ -259,7 +261,6 @@ document.addEventListener("DOMContentLoaded", function() {
       track.gainNode = audioCtx.createGain(); track.gainNode.connect(masterGain);
       track.gainNode.gain.value = track.mute ? 0 : track.vol;
       track.segments.forEach(seg => {
-        // PARTICLES
         if(seg.brush==="particles") {
            seg.points.forEach(p => {
              const t = start + (p.x/track.canvas.width)*playbackDuration;
@@ -275,13 +276,11 @@ document.addEventListener("DOMContentLoaded", function() {
            return;
         }
         
-        // CONTINUOUS
         const sorted = seg.points.slice().sort((a,b)=>a.x-b.x); if(sorted.length<2) return;
         const sT = start + (sorted[0].x/track.canvas.width)*playbackDuration;
         const eT = start + (sorted[sorted.length-1].x/track.canvas.width)*playbackDuration;
         if(!Number.isFinite(sT) || !Number.isFinite(eT)) return;
 
-        // CHORD
         if(seg.brush==="chord" && seg.chordType) {
            chordIntervals[seg.chordType].forEach(iv => {
              const osc=audioCtx.createOscillator(); osc.type=track.wave;
@@ -299,19 +298,14 @@ document.addEventListener("DOMContentLoaded", function() {
            return;
         }
         
-        // STANDARD/FRACTAL/CALLIGRAPHY
         const osc = audioCtx.createOscillator(); osc.type = track.wave;
         const filter = audioCtx.createBiquadFilter(); filter.type = "lowpass"; filter.Q.value = 10; filter.frequency.value = 20000;
         const g = audioCtx.createGain(); g.gain.setValueAtTime(0, sT);
         g.gain.linearRampToValueAtTime(0.3, sT+0.02); g.gain.setValueAtTime(0.3, eT); g.gain.linearRampToValueAtTime(0, eT+0.1);
-        
         let chain = g;
-        if(seg.brush==="fractal"){ const shaper=audioCtx.createWaveShaper(); shaper.curve=getDistortionCurve(); osc.connect(shaper); shaper.connect(g); } // Fractal routing
-        else if(seg.brush==="calligraphy"){ 
-            const cutoff = Math.max(100, 5000-(seg.thickness*250));
-            filter.frequency.setValueAtTime(cutoff, sT); osc.connect(filter).connect(g); 
-        } else { osc.connect(g); }
-        
+        if(seg.brush==="fractal"){ const shaper=audioCtx.createWaveShaper(); shaper.curve=getDistortionCurve(); osc.connect(shaper); shaper.connect(g); }
+        else if(seg.brush==="calligraphy"){ const cutoff = Math.max(100, 5000-(seg.thickness*250)); filter.frequency.setValueAtTime(cutoff, sT); osc.connect(filter).connect(g); } 
+        else { osc.connect(g); }
         g.connect(track.gainNode);
         sorted.forEach(p => {
            const t = start + (p.x/track.canvas.width)*playbackDuration;
@@ -324,7 +318,73 @@ document.addEventListener("DOMContentLoaded", function() {
     });
   }
 
-  // --- HELPERS ---
+  // --- LOOP & VIZ ---
+  function updatePigeonViz() {
+     if(!analyser || !pigeonImg) return;
+     analyser.getByteFrequencyData(dataArray);
+     
+     // Lautstärke messen
+     let sum = 0;
+     for(let i=0; i<dataArray.length; i++) sum += dataArray[i];
+     const avg = sum / dataArray.length;
+     
+     // High Freqs für Glitch-Berechnung
+     const highEnd = dataArray[dataArray.length-2] || 0;
+     
+     // Welcher Pinsel ist aktiv?
+     const currentBrush = document.getElementById("brushSelect").value;
+
+     let transformStr = "scale(1)";
+     let filterStr = "";
+
+     // --- LOGIK-WEICHE ---
+     if (currentBrush === "fractal") {
+         // A) FRACTAL MODUS: Nur Glitch, keine Bewegung
+         if(avg > 10) {
+            // Wilder RGB Split
+            const rOff = (avg/10) * (Math.random()>0.5?1:-1);
+            const bOff = (highEnd/5) * (Math.random()>0.5?1:-1);
+            filterStr = `drop-shadow(${rOff}px 0px 0px rgba(255,0,0,0.7)) drop-shadow(${bOff}px 0px 0px rgba(0,255,255,0.7))`;
+         }
+         // Transform bleibt strikt auf 1 (kein Stauchen beim Glitchen)
+         
+     } else {
+         // B) NORMAL MODUS: Kein Glitch, aber starkes Bouncen
+         // Faktor erhöht auf 0.6 (vorher 0.4) für mehr Drama bei Bass
+         const squashY = 1 - (avg / 255) * 0.6; 
+         const stretchX = 1 + (avg / 255) * 0.2;
+         
+         transformStr = `scale(${stretchX}, ${squashY})`;
+         // Filter bleibt leer
+     }
+     
+     // Werte anwenden
+     pigeonImg.style.transform = transformStr;
+     pigeonImg.style.filter = filterStr;
+  }
+
+  function loop() {
+    if(!isPlaying) return;
+    const elapsed = audioCtx.currentTime - playbackStartTime;
+    if(elapsed >= playbackDuration) {
+       if(document.getElementById("loopCheckbox").checked) {
+          playbackStartTime = audioCtx.currentTime; 
+          scheduleTracks(playbackStartTime);
+       } else {
+          document.getElementById("stopButton").click();
+          return;
+       }
+    }
+    const x = (elapsed/playbackDuration) * 750;
+    tracks.forEach(t => redrawTrack(t, x));
+    
+    // VISUAL UPDATE
+    updatePigeonViz();
+    
+    animationFrameId = requestAnimationFrame(loop);
+  }
+
+  // --- HELPERS (SAME) ---
   function getPos(e, c) { const r=c.getBoundingClientRect(), sx=c.width/r.width, sy=c.height/r.height; const cx=e.touches?e.touches[0].clientX:e.clientX, cy=e.touches?e.touches[0].clientY:e.clientY; return {x:(cx-r.left)*sx, y:(cy-r.top)*sy}; }
   function snap(x, w) { return Math.round(x/(w/32))*(w/32); }
   function mapY(y, h) { const val=1000-(y/h)*920; return Math.max(20, Math.min(val, 20000)); } 
@@ -367,24 +427,7 @@ document.addEventListener("DOMContentLoaded", function() {
     if(hx!==undefined){ t.ctx.strokeStyle="red"; t.ctx.lineWidth=2; t.ctx.beginPath(); t.ctx.moveTo(hx,0); t.ctx.lineTo(hx,100); t.ctx.stroke(); }
   }
 
-  // --- LOOP & CONTROLS ---
-  function loop() {
-    if(!isPlaying) return;
-    const elapsed = audioCtx.currentTime - playbackStartTime;
-    if(elapsed >= playbackDuration) {
-       if(document.getElementById("loopCheckbox").checked) {
-          playbackStartTime = audioCtx.currentTime; 
-          scheduleTracks(playbackStartTime);
-       } else {
-          document.getElementById("stopButton").click();
-          return;
-       }
-    }
-    const x = (elapsed/playbackDuration) * 750;
-    tracks.forEach(t => redrawTrack(t, x));
-    animationFrameId = requestAnimationFrame(loop);
-  }
-
+  // --- BUTTONS ---
   document.getElementById("playButton").addEventListener("click", () => {
      if(isPlaying) return; initAudio(); if(audioCtx.state==="suspended") audioCtx.resume();
      const bpmVal = parseFloat(document.getElementById("bpmInput").value);
@@ -393,7 +436,12 @@ document.addEventListener("DOMContentLoaded", function() {
      playbackStartTime = audioCtx.currentTime+0.1;
      isPlaying=true; scheduleTracks(playbackStartTime); requestAnimationFrame(loop);
   });
-  document.getElementById("stopButton").addEventListener("click", () => { isPlaying=false; cancelAnimationFrame(animationFrameId); tracks.forEach(t=>{if(t.gainNode){t.gainNode.disconnect();t.gainNode=null;} redrawTrack(t);}); });
+  document.getElementById("stopButton").addEventListener("click", () => { 
+      isPlaying=false; 
+      cancelAnimationFrame(animationFrameId); 
+      tracks.forEach(t=>{if(t.gainNode){t.gainNode.disconnect();t.gainNode=null;} redrawTrack(t);}); 
+      if(pigeonImg) { pigeonImg.style.transform="scale(1)"; pigeonImg.style.filter=""; }
+  });
   document.getElementById("clearButton").addEventListener("click", () => { tracks.forEach(t=>{t.segments=[]; redrawTrack(t);}); undoStack=[]; });
   document.getElementById("undoButton").addEventListener("click", () => { if(undoStack.length){const o=undoStack.pop(); tracks[o.trackIdx].segments.pop(); redrawTrack(tracks[o.trackIdx]);} });
   document.getElementById("exportButton").addEventListener("click", () => {
