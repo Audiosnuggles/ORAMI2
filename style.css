@@ -24,11 +24,16 @@ input[type="number"] { width: 50px; }
 
 /* TAUBE FIX: Z-Index sehr hoch */
 #pigeon {
-  position: absolute; /* Orientiert sich jetzt am #main Container */
-  top: 15px;          /* Abstand von oben */
-  right: 20px;        /* Abstand von rechts */
-  width: 60px;        /* Etwas kleiner, damit sie nicht die Controls verdeckt */
+  position: absolute;
+  top: 15px; 
+  right: 20px;
+  width: 60px;
+  z-index: 99999;
   opacity: 0.8;
   pointer-events: none;
-  z-index: 100;
+  
+  /* NEU: Wichtig damit sie am Boden klebt! */
+  transform-origin: bottom center;
+  /* Optional: Macht die Bewegung etwas geschmeidiger */
+  transition: transform 0.05s ease-out; 
 }
